@@ -1,0 +1,9 @@
+{
+  "apps": [
+    {
+      "name": "RPI Live",
+      "path": "expo",
+      "framework": "react-native"
+    }
+  ]
+}

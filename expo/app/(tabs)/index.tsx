@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, ChevronDown, ArrowRight, LogOut, EyeOff } from 'lucide-react-native';
+import { Search, ChevronDown, ArrowRight, LogOut, EyeOff, Database } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useRPI } from '@/contexts/RPIContext';
@@ -84,6 +84,7 @@ export default function DashboardScreen() {
     filterSite, setFilterSite,
     toggleSort, sortCol, sortDir,
     getDisplayName,
+    isDataLoading, isDbConnected,
   } = useRPI();
   const { siteLabel, anonymize, toggleAnonymize, logout } = useAuth();
 
@@ -127,7 +128,15 @@ export default function DashboardScreen() {
         <View style={styles.topBarLeft}>
           <View>
             <Text style={styles.brandTitle}>RPI LIVE v5</Text>
-            <Text style={styles.brandSub}>{siteLabel} · {results.length} patients</Text>
+            <View style={styles.brandSubRow}>
+              <Text style={styles.brandSub}>{siteLabel} · {results.length} patients</Text>
+              <View style={[styles.dbBadge, { backgroundColor: isDbConnected ? '#052e16' : '#450a0a', borderColor: isDbConnected ? '#166534' : '#991b1b' }]}>
+                <Database size={9} color={isDbConnected ? '#4ade80' : '#f87171'} />
+                <Text style={[styles.dbBadgeText, { color: isDbConnected ? '#4ade80' : '#f87171' }]}>
+                  {isDataLoading ? 'Syncing' : isDbConnected ? 'DB' : 'Offline'}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
         <View style={styles.topBarRight}>
@@ -277,6 +286,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textMuted,
     marginTop: 1,
+  },
+  brandSubRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    marginTop: 1,
+  },
+  dbBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  dbBadgeText: {
+    fontSize: 8,
+    fontWeight: '700' as const,
+    letterSpacing: 0.3,
   },
 
   scrollContent: {

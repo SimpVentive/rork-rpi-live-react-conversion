@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch,
+  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, ChevronDown, ArrowRight, LogOut, EyeOff, Database } from 'lucide-react-native';
@@ -125,9 +125,16 @@ export default function DashboardScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.topBar}>
-        <View style={styles.topBarLeft}>
-          <View>
-            <Text style={styles.brandTitle}>RPI LIVE v5</Text>
+        <View style={styles.topBarLogoRow}>
+          <Image source={require('@/assets/images/metaloga-logo.png')} style={styles.logoLeft} resizeMode="contain" />
+          <View style={styles.brandCenter}>
+            <Text style={styles.brandTitle}>Prognosis AI Engine</Text>
+            <Text style={styles.brandVersion}>(V1)</Text>
+          </View>
+          <Image source={require('@/assets/images/relversiv-logo.png')} style={styles.logoRight} resizeMode="contain" />
+        </View>
+        <View style={styles.topBarSecondRow}>
+          <View style={styles.topBarLeft}>
             <View style={styles.brandSubRow}>
               <Text style={styles.brandSub}>{siteLabel} · {results.length} patients</Text>
               <View style={[styles.dbBadge, { backgroundColor: isDbConnected ? '#052e16' : '#450a0a', borderColor: isDbConnected ? '#166534' : '#991b1b' }]}>
@@ -138,22 +145,22 @@ export default function DashboardScreen() {
               </View>
             </View>
           </View>
-        </View>
-        <View style={styles.topBarRight}>
-          <View style={styles.anonToggle}>
-            <EyeOff size={13} color={anonymize ? '#60a5fa' : '#475569'} />
-            <Text style={[styles.anonLabel, anonymize && styles.anonLabelActive]}>Anon</Text>
-            <Switch
-              value={anonymize}
-              onValueChange={toggleAnonymize}
-              trackColor={{ false: '#1e293b', true: '#1e3a5f' }}
-              thumbColor={anonymize ? '#60a5fa' : '#475569'}
-              style={styles.anonSwitch}
-            />
+          <View style={styles.topBarRight}>
+            <View style={styles.anonToggle}>
+              <EyeOff size={13} color={anonymize ? '#60a5fa' : '#475569'} />
+              <Text style={[styles.anonLabel, anonymize && styles.anonLabelActive]}>Anon</Text>
+              <Switch
+                value={anonymize}
+                onValueChange={toggleAnonymize}
+                trackColor={{ false: '#1e293b', true: '#1e3a5f' }}
+                thumbColor={anonymize ? '#60a5fa' : '#475569'}
+                style={styles.anonSwitch}
+              />
+            </View>
+            <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.7}>
+              <LogOut size={14} color="#f87171" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.7}>
-            <LogOut size={14} color="#f87171" />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -226,14 +233,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0f1a',
   },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
     backgroundColor: '#0a1020',
     borderBottomWidth: 2,
     borderBottomColor: '#1e3a5f',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  topBarLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  logoLeft: {
+    width: 80,
+    height: 28,
+  },
+  logoRight: {
+    width: 80,
+    height: 28,
+  },
+  brandCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  brandVersion: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#94a3b8',
+    letterSpacing: 0.5,
+  },
+  topBarSecondRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   topBarLeft: {
     flex: 1,
@@ -277,10 +310,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   brandTitle: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '900' as const,
     color: Colors.textWhite,
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    textAlign: 'center' as const,
   },
   brandSub: {
     fontSize: 11,

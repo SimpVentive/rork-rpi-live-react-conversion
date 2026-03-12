@@ -250,8 +250,8 @@ const styles = StyleSheet.create({
     height: 28,
   },
   logoRight: {
-    width: 80,
-    height: 28,
+    width: 120,
+    height: 42,
   },
   brandCenter: {
     flex: 1,

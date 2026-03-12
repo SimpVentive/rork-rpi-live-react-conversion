@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { LayoutDashboard, Stethoscope, Save, HelpCircle } from "lucide-react-native";
+import { LayoutDashboard, Stethoscope, Save, HelpCircle, BrainCircuit } from "lucide-react-native";
 import React from "react";
 import Colors from "@/constants/colors";
 
@@ -42,6 +42,13 @@ export default function TabLayout() {
         options={{
           title: "Saved",
           tabBarIcon: ({ color, size }) => <Save color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="ai"
+        options={{
+          title: "AI",
+          tabBarIcon: ({ color, size }) => <BrainCircuit color={color} size={size} />,
         }}
       />
       <Tabs.Screen

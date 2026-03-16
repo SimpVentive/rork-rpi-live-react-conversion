@@ -104,7 +104,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={styles.credToggle}
             onPress={() => setShowCredentials((p) => !p)}
             activeOpacity={0.7}
@@ -112,7 +112,7 @@ export default function LoginScreen() {
             <Text style={styles.credToggleText}>
               {showCredentials ? 'Hide' : 'Show'} demo credentials
             </Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           {showCredentials && (
             <View style={styles.credCard}>

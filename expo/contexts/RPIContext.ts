@@ -21,6 +21,7 @@ import {
 } from '@/data/types';
 import {
   sSTarT, sROM, sPhysio, sAnthropo, sComor, sLife,
+  getMatchType,
 } from '@/data/scoring';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/trpc';
@@ -365,8 +366,31 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
     },
   });
 
+  const savePatientResultsMutation = useMutation({
+    mutationFn: async (payload: { results: Array<Record<string, unknown>> }) => {
+      console.log('[RPIContext] Saving patient results to DB, count:', payload.results.length);
+      return api.patientResults.saveBatch.mutate(payload);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['patientResults'] });
+    },
+  });
+
+  const saveCohortAnalysisMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      console.log('[RPIContext] Saving cohort analysis to DB');
+      return api.cohortAnalysis.save.mutate(payload as Parameters<typeof api.cohortAnalysis.save.mutate>[0]);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['cohortAnalysis'] });
+    },
+  });
+
   const saveScenario = useCallback(() => {
     const s = computeStats(results);
+    const scenarioId = `scenario:${Date.now()}`;
+    const ts = new Date().toLocaleString();
+
     const patientSnapshots: PatientSnapshot[] = results.map((p) => ({
       name: p.name,
       rpi: p.rpi,
@@ -381,8 +405,9 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
         life: sLife(p, SW, lifeOverrides[p.name]),
       },
     }));
+
     const scenario = {
-      ts: new Date().toLocaleString(),
+      ts,
       weights: W as unknown as Record<string, number>,
       sub_weights: SW as unknown as Record<string, unknown>,
       tga,
@@ -397,9 +422,174 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
       patients: patientSnapshots,
     };
     saveScenarioMutation.mutate(scenario);
+
+    const mapRiskToNumeric = (sr: string): number => {
+      if (sr === 'H') return 3;
+      if (sr === 'M') return 2;
+      if (sr === 'L') return 1;
+      return 0;
+    };
+    const mapTierToNumeric = (tier: 'Red' | 'Amber' | 'Green'): number => {
+      if (tier === 'Red') return 3;
+      if (tier === 'Amber') return 2;
+      return 1;
+    };
+
+    try {
+      const classifiedResults = results.filter((r) => r.sr !== 'U');
+      const patientResultRows = classifiedResults.map((p) => {
+        const lo = lifeOverrides[p.name] || { smoke: 0, smokeyrs: '0', alcohol: 0, alcoholyrs: '0', sitting: 0, standing: 0 };
+        const rpiN = mapTierToNumeric(p.tier);
+        const manualN = mapRiskToNumeric(p.sr);
+        const ratio = manualN > 0 ? parseFloat((rpiN / manualN).toFixed(2)) : 0;
+        const mt = getMatchType(p.sr, p.tier);
+        return {
+          scenario_id: scenarioId,
+          patient_name: p.name,
+          site: p.site,
+          age: p.age,
+          gender: p.g,
+          manual_risk: p.sr,
+          ar: p.ar,
+          gr: p.gr,
+          htn: p.htn,
+          dm: p.dm,
+          oa: p.oa,
+          osteo: p.osteo,
+          injury: p.injury,
+          surgical: p.surgical,
+          thyroid: p.thyroid,
+          flex: p.flex,
+          ext: p.ext,
+          lrot: p.lrot,
+          rrot: p.rrot,
+          start_raw: p.start,
+          fab_l: p.fab_l,
+          fair_l: p.fair_l,
+          slr_l: p.slr_l,
+          fab_r: p.fab_r,
+          fair_r: p.fair_r,
+          slr_r: p.slr_r,
+          hyp: p.hyp,
+          tend: p.tend,
+          tight: p.tight,
+          knots: p.knots,
+          smoke: lo.smoke,
+          smokeyrs: lo.smokeyrs,
+          alcohol: lo.alcohol,
+          alcoholyrs: lo.alcoholyrs,
+          sitting: lo.sitting,
+          standing: lo.standing,
+          score_start: sSTarT(p),
+          score_rom: sROM(p, SW),
+          score_physio: sPhysio(p, SW),
+          score_anthro: sAnthropo(p, SW),
+          score_comor: sComor(p, SW),
+          score_life: sLife(p, SW, lo),
+          rpi: p.rpi,
+          tier: p.tier,
+          rpi_numeric: rpiN,
+          manual_numeric: manualN,
+          ratio,
+          ratio_distance: Math.abs(ratio - 1.0),
+          match_type: mt || 'Unclassified',
+        };
+      });
+      savePatientResultsMutation.mutate({ results: patientResultRows });
+
+      const groups: Record<string, PatientResult[]> = { H: [], M: [], L: [], U: [] };
+      results.forEach((r) => { if (groups[r.sr]) groups[r.sr].push(r); });
+      const avg = (arr: PatientResult[], fn: (p: PatientResult) => number) =>
+        arr.length ? Math.round(arr.reduce((sum, p) => sum + fn(p), 0) / arr.length) : 0;
+
+      const concordance = { concordant: 0, partial: 0, discordant: 0, unclassified: 0 };
+      results.forEach((r) => {
+        const mt = getMatchType(r.sr, r.tier);
+        if (mt === 'Concordant') concordance.concordant++;
+        else if (mt === 'Partial') concordance.partial++;
+        else if (mt === 'Discordant') concordance.discordant++;
+        else concordance.unclassified++;
+      });
+
+      const sites = ['KIMS', 'Kues', 'Abhis', 'SDD'];
+      const siteBreakdown = sites.map((site) => {
+        const sp = results.filter((r) => r.site === site);
+        const cl = sp.filter((r) => r.sr !== 'U');
+        const highs = cl.filter((r) => r.sr === 'H');
+        const highRed = highs.filter((r) => r.tier === 'Red');
+        return {
+          site,
+          total: sp.length,
+          green: sp.filter((r) => r.tier === 'Green').length,
+          amber: sp.filter((r) => r.tier === 'Amber').length,
+          red: sp.filter((r) => r.tier === 'Red').length,
+          classified: cl.length,
+          sensitivity: highs.length ? Math.round(highRed.length / highs.length * 100) : null,
+        };
+      });
+
+      const totalRatios = classifiedResults.map((r) => {
+        const rpiN = mapTierToNumeric(r.tier);
+        const manualN = mapRiskToNumeric(r.sr);
+        return manualN > 0 ? rpiN / manualN : 0;
+      });
+      const avgRatio = totalRatios.length > 0
+        ? parseFloat((totalRatios.reduce((a, b) => a + b, 0) / totalRatios.length).toFixed(2))
+        : 0;
+      const perfectMatchCount = totalRatios.filter((r) => Math.abs(r - 1.0) < 0.001).length;
+
+      saveCohortAnalysisMutation.mutate({
+        scenario_id: scenarioId,
+        site: siteParam,
+        ts,
+        total_patients: results.length,
+        classified_patients: classifiedResults.length,
+        green_count: s.green,
+        amber_count: s.amber,
+        red_count: s.red,
+        sensitivity: s.sens,
+        precision_val: s.prec,
+        accuracy: s.acc,
+        concordant: concordance.concordant,
+        partial: concordance.partial,
+        discordant: concordance.discordant,
+        unclassified: concordance.unclassified,
+        avg_rpi_high: avg(groups.H, (p) => p.rpi),
+        avg_rpi_mod: avg(groups.M, (p) => p.rpi),
+        avg_rpi_low: avg(groups.L, (p) => p.rpi),
+        avg_ratio: avgRatio,
+        perfect_match_count: perfectMatchCount,
+        domain_avg_start_high: avg(groups.H, (p) => sSTarT(p)),
+        domain_avg_start_mod: avg(groups.M, (p) => sSTarT(p)),
+        domain_avg_start_low: avg(groups.L, (p) => sSTarT(p)),
+        domain_avg_rom_high: avg(groups.H, (p) => sROM(p, SW)),
+        domain_avg_rom_mod: avg(groups.M, (p) => sROM(p, SW)),
+        domain_avg_rom_low: avg(groups.L, (p) => sROM(p, SW)),
+        domain_avg_physio_high: avg(groups.H, (p) => sPhysio(p, SW)),
+        domain_avg_physio_mod: avg(groups.M, (p) => sPhysio(p, SW)),
+        domain_avg_physio_low: avg(groups.L, (p) => sPhysio(p, SW)),
+        domain_avg_anthro_high: avg(groups.H, (p) => sAnthropo(p, SW)),
+        domain_avg_anthro_mod: avg(groups.M, (p) => sAnthropo(p, SW)),
+        domain_avg_anthro_low: avg(groups.L, (p) => sAnthropo(p, SW)),
+        domain_avg_comor_high: avg(groups.H, (p) => sComor(p, SW)),
+        domain_avg_comor_mod: avg(groups.M, (p) => sComor(p, SW)),
+        domain_avg_comor_low: avg(groups.L, (p) => sComor(p, SW)),
+        domain_avg_life_high: avg(groups.H, (p) => sLife(p, SW, lifeOverrides[p.name])),
+        domain_avg_life_mod: avg(groups.M, (p) => sLife(p, SW, lifeOverrides[p.name])),
+        domain_avg_life_low: avg(groups.L, (p) => sLife(p, SW, lifeOverrides[p.name])),
+        site_breakdown: siteBreakdown,
+        weights: W as unknown as Record<string, number>,
+        sub_weights: SW as unknown as Record<string, unknown>,
+        tga,
+        tar,
+      } as Parameters<typeof api.cohortAnalysis.save.mutate>[0]);
+    } catch (err) {
+      console.log('[RPIContext] Failed to save patient results/cohort analysis:', err);
+    }
+
     return {
       id: Date.now(),
-      ts: scenario.ts,
+      ts,
       W: { ...W },
       SW: JSON.parse(JSON.stringify(SW)),
       TGA: tga,
@@ -407,7 +597,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
       ...s,
       patients: patientSnapshots,
     } as SavedScenario;
-  }, [results, W, SW, tga, tar, lifeOverrides, saveScenarioMutation]);
+  }, [results, W, SW, tga, tar, lifeOverrides, saveScenarioMutation, savePatientResultsMutation, saveCohortAnalysisMutation, siteParam]);
 
   const deleteScenarioMutation = useMutation({
     mutationFn: async (id: string) => {

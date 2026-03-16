@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, LayoutAnimation, Platform, UIManager } from 'react-native';
-import { ChevronDown, ChevronUp, Save, SlidersHorizontal, ChevronRight } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Save, SlidersHorizontal, ChevronRight, AlertTriangle } from 'lucide-react-native';
 import { useRPI } from '@/contexts/RPIContext';
 import Slider from '@/components/Slider';
 import Colors from '@/constants/colors';
@@ -181,12 +181,12 @@ function DomainRow({ config, expanded, onToggle }: {
 const MemoDomainRow = React.memo(DomainRow);
 
 function WeightControlsInner() {
-  const { W, tga, setTGA, tar, setTAR, saveScenario } = useRPI();
+  const { weightTotal, tga, setTGA, tar, setTAR, saveScenario } = useRPI();
   const [panelOpen, setPanelOpen] = useState<boolean>(true);
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [saveFlash, setSaveFlash] = useState<boolean>(false);
 
-  const total = W.start + W.rom + W.physio + W.anthro + W.comor + W.life;
+  const total = weightTotal;
 
   const handleSave = useCallback(() => {
     saveScenario();
@@ -231,6 +231,15 @@ function WeightControlsInner() {
           {panelOpen ? <ChevronUp size={18} color={Colors.bluePale} /> : <ChevronDown size={18} color={Colors.bluePale} />}
         </View>
       </TouchableOpacity>
+
+      {panelOpen && total !== 100 && (
+        <View style={styles.warningBanner}>
+          <AlertTriangle size={14} color="#fbbf24" />
+          <Text style={styles.warningText}>
+            Weights total {total}% — does not equal 100%. Results will be proportionally normalized but may not reflect intended distribution.
+          </Text>
+        </View>
+      )}
 
       {panelOpen && (
         <ScrollView
@@ -521,5 +530,22 @@ const styles = StyleSheet.create({
   totalDisplayValue: {
     fontSize: 20,
     fontWeight: '900',
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#422006',
+    borderBottomWidth: 1,
+    borderBottomColor: '#854d0e',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#fbbf24',
+    lineHeight: 16,
   },
 });

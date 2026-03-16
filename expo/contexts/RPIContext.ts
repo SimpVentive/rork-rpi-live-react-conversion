@@ -268,26 +268,15 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   }, [results, searchQuery, filterRisk, filterTier, filterSite, filterGender, sortCol, sortDir]);
 
   const updateWeight = useCallback((key: keyof GroupWeights, value: number) => {
-    setW((prev) => {
-      const keys: (keyof GroupWeights)[] = ['start', 'rom', 'physio', 'anthro', 'comor', 'life'];
-      const others = keys.filter((k) => k !== key);
-      const newVal = Math.min(value, 100 - others.length);
-      const remainder = 100 - newVal;
-      const prevOthersSum = others.reduce((s, k) => s + prev[k], 0);
-      const next = { ...prev };
-      others.forEach((k) => {
-        next[k] = prevOthersSum > 0 ? Math.round(prev[k] / prevOthersSum * remainder) : Math.round(remainder / others.length);
-      });
-      const dist = others.reduce((s, k) => s + next[k], 0);
-      const diff = remainder - dist;
-      if (diff !== 0) {
-        const maxKey = others.reduce((a, b) => next[a] >= next[b] ? a : b);
-        next[maxKey] += diff;
-      }
-      next[key] = newVal;
-      return next;
-    });
+    setW((prev) => ({
+      ...prev,
+      [key]: Math.max(0, Math.min(100, Math.round(value))),
+    }));
   }, []);
+
+  const weightTotal = useMemo(() => {
+    return W.start + W.rom + W.physio + W.anthro + W.comor + W.life;
+  }, [W]);
 
   const saveManualMutation = useMutation({
     mutationFn: async (params: { name: string; risk: 'H' | 'M' | 'L' | 'U' }) => {
@@ -668,7 +657,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
 
   return useMemo(() => ({
     patients,
-    W, setW, updateWeight,
+    W, setW, updateWeight, weightTotal,
     SW, setSW, updateSubWeight,
     tga, setTGA, tar, setTAR,
     lifeOverrides, saveLifeOverride, getLifeOverride,
@@ -687,7 +676,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
     isDataLoading,
     isDbConnected,
   }), [
-    patients, W, updateWeight, SW, updateSubWeight, tga, tar,
+    patients, W, updateWeight, weightTotal, SW, updateSubWeight, tga, tar,
     lifeOverrides, saveLifeOverride, getLifeOverride,
     manualOverrides, setManualClassification, getEffectiveManualRisk,
     results, filteredResults, stats,

@@ -207,16 +207,16 @@ const styles = StyleSheet.create({
   siteTile: {
     flex: 1,
     minWidth: 160,
-    backgroundColor: '#091623',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#18304d',
+    borderColor: Colors.border,
   },
   siteName: {
     fontSize: 13,
     fontWeight: '900',
-    color: Colors.textWhite,
+    color: Colors.text,
     marginBottom: 4,
   },
   siteValue: {
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chartLabel: {
-    color: Colors.textWhite,
+    color: Colors.text,
     fontSize: 12,
     fontWeight: '900',
   },
@@ -297,9 +297,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   emptyState: {
-    backgroundColor: '#09101d',
+    backgroundColor: Colors.surfaceMid,
     borderWidth: 1,
-    borderColor: '#1e3a5f',
+    borderColor: Colors.border,
     borderRadius: 14,
     padding: 18,
     marginBottom: 18,

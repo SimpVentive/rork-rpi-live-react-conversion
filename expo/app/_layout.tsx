@@ -4,9 +4,11 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as Font from "expo-font";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { RPIProvider } from "@/contexts/RPIContext";
 import LoginScreen from "@/app/login";
+import { useFontsTheme, colors } from "@/constants/theme";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -28,7 +30,7 @@ function AuthGate() {
   if (isLoading) {
     return (
       <View style={gateStyles.loading}>
-        <ActivityIndicator size="large" color="#60a5fa" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -47,16 +49,24 @@ function AuthGate() {
 const gateStyles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: '#060a14',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
 });
 
 export default function RootLayout() {
+  const fontsLoaded = useFontsTheme();
+
   useEffect(() => {
-    void SplashScreen.hideAsync();
-  }, []);
+    if (fontsLoaded) {
+      void SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

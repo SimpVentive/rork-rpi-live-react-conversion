@@ -1,17 +1,17 @@
 import { Tabs } from "expo-router";
 import { LayoutDashboard, Stethoscope, Save, HelpCircle, BrainCircuit, SlidersHorizontal, BarChart3 } from "lucide-react-native";
 import React from "react";
-import Colors from "@/constants/colors";
+import { colors } from "@/constants/theme";
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.blue,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textTertiary,
         tabBarStyle: {
-          backgroundColor: '#0a1020',
-          borderTopColor: Colors.border,
+          backgroundColor: colors.white,
+          borderTopColor: colors.border,
           borderTopWidth: 1,
         },
         tabBarLabelStyle: {

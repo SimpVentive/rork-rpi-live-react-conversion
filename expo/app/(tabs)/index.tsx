@@ -10,6 +10,7 @@ import { useRPI } from '@/contexts/RPIContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { WeightControls } from '@/components/WeightControls';
 import Colors from '@/constants/colors';
+import { colors, fonts } from '@/constants/theme';
 import { tierColor, riskColor, riskLabel, getMatchType } from '@/data/scoring';
 import { PatientResult, SortColumn } from '@/data/types';
 
@@ -50,7 +51,7 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wid
           <Text style={styles.patientMetaText}>{p.age}{p.g} · {p.site}</Text>
         </View>
         <Text style={[styles.riskText, { color: rc }]}>{riskLabel(p.sr)}</Text>
-        <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? '#450a0a' : p.tier === 'Amber' ? '#451a03' : '#14532d', borderColor: tc }]}>
+        <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? Colors.redBg : p.tier === 'Amber' ? Colors.amberBg : Colors.greenBg, borderColor: tc }]}>
           <Text style={[styles.tierPillText, { color: tc }]}>{p.tier}</Text>
         </View>
         <View style={styles.rpiBlock}>
@@ -80,7 +81,7 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wid
           <View style={[styles.rpiBar, { width: Math.max(4, p.rpi * 0.6), backgroundColor: tc }]} />
           <Text style={[styles.rpiScore, { color: tc }]}>{p.rpi}</Text>
         </View>
-        <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? '#450a0a' : p.tier === 'Amber' ? '#451a03' : '#14532d', borderColor: tc }]}>
+        <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? Colors.redBg : p.tier === 'Amber' ? Colors.amberBg : Colors.greenBg, borderColor: tc }]}>
           <Text style={[styles.tierPillText, { color: tc }]}>{p.tier}</Text>
         </View>
         <Text style={[styles.matchText, { color: matchColor }]}>{match === 'Concordant' ? '✓' : match === 'Partial' ? '~' : '✗'}</Text>
@@ -164,9 +165,9 @@ export default function DashboardScreen() {
           <View style={styles.topBarLeft}>
             <View style={styles.brandSubRow}>
               <Text style={styles.brandSub}>{siteLabel} · {results.length} patients</Text>
-              <View style={[styles.dbBadge, { backgroundColor: isDbConnected ? '#052e16' : '#450a0a', borderColor: isDbConnected ? '#166534' : '#991b1b' }]}> 
-                <Database size={9} color={isDbConnected ? '#4ade80' : '#f87171'} />
-                <Text style={[styles.dbBadgeText, { color: isDbConnected ? '#4ade80' : '#f87171' }]}> 
+              <View style={[styles.dbBadge, { backgroundColor: isDbConnected ? Colors.greenBg : Colors.redBg, borderColor: isDbConnected ? Colors.green : Colors.red }]}> 
+                <Database size={9} color={isDbConnected ? Colors.green : Colors.red} />
+                <Text style={[styles.dbBadgeText, { color: isDbConnected ? Colors.green : Colors.red }]}> 
                   {isDataLoading ? 'Syncing' : isDbConnected ? 'DB' : 'Offline'}
                 </Text>
               </View>
@@ -174,18 +175,18 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.topBarRight}>
             <View style={styles.anonToggle}>
-              <EyeOff size={13} color={anonymize ? '#60a5fa' : '#475569'} />
+              <EyeOff size={13} color={anonymize ? Colors.blue : Colors.textMuted} />
               <Text style={[styles.anonLabel, anonymize && styles.anonLabelActive]}>Anon</Text>
               <Switch
                 value={anonymize}
                 onValueChange={toggleAnonymize}
-                trackColor={{ false: '#1e293b', true: '#1e3a5f' }}
-                thumbColor={anonymize ? '#60a5fa' : '#475569'}
+                trackColor={{ false: Colors.border, true: Colors.bluePale }}
+                thumbColor={anonymize ? Colors.blue : Colors.textMuted}
                 style={styles.anonSwitch}
               />
             </View>
             <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.7}>
-              <LogOut size={14} color="#f87171" />
+              <LogOut size={14} color={Colors.red} />
             </TouchableOpacity>
           </View>
         </View>
@@ -268,12 +269,12 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#0a0f1a',
+    backgroundColor: Colors.bg,
   },
   topBar: {
-    backgroundColor: '#0a1020',
-    borderBottomWidth: 2,
-    borderBottomColor: '#1e3a5f',
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
@@ -319,9 +320,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#0d1835',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#1e3a5f',
+    borderColor: Colors.border,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -329,10 +330,10 @@ const styles = StyleSheet.create({
   anonLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#475569',
+    color: Colors.textMuted,
   },
   anonLabelActive: {
-    color: '#60a5fa',
+    color: Colors.blue,
   },
   anonSwitch: {
     transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }],
@@ -341,16 +342,16 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#1a0a0a',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#991b1b',
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   brandTitle: {
     fontSize: 17,
     fontWeight: '900' as const,
-    color: Colors.textWhite,
+    color: Colors.text,
     letterSpacing: 0.5,
     textAlign: 'center' as const,
   },
@@ -411,7 +412,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#0f172a',
+    color: Colors.text,
   },
   statSub: {
     fontSize: 11,
@@ -439,7 +440,7 @@ const styles = StyleSheet.create({
   registryTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.text,
   },
   registryCount: {
     fontSize: 12,
@@ -543,16 +544,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: Colors.borderLight,
   },
   patientCard: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: Colors.surfaceLight,
     marginHorizontal: 14,
     marginVertical: 6,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.border,
   },
   patientInfo: {
     flex: 1,
@@ -561,7 +562,7 @@ const styles = StyleSheet.create({
   patientName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.text,
     marginBottom: 2,
   },
   patientMeta: {

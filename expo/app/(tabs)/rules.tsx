@@ -171,7 +171,7 @@ export default function RulesScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#0a0f1a',
+    backgroundColor: Colors.bg,
   },
   titleRow: {
     marginTop: 14,
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '900',
-    color: Colors.textWhite,
+    color: Colors.text,
     marginBottom: 4,
   },
   subtitle: {
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '900',
-    color: Colors.textWhite,
+    color: Colors.text,
     marginBottom: 4,
   },
   sectionSub: {
@@ -250,9 +250,9 @@ const styles = StyleSheet.create({
   emptyState: {
     marginTop: 12,
     padding: 20,
-    backgroundColor: '#09101d',
+    backgroundColor: Colors.surfaceMid,
     borderWidth: 1,
-    borderColor: '#1e3a5f',
+    borderColor: Colors.border,
     borderRadius: 14,
   },
   emptyText: {
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   configTitle: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#0f172a',
+    color: Colors.text,
   },
   configScore: {
     fontSize: 14,
@@ -333,15 +333,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   comparisonCard: {
-    backgroundColor: '#08121e',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#1f406d',
+    borderColor: Colors.border,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
   },
   comparisonTitle: {
-    color: Colors.textWhite,
+    color: Colors.text,
     fontSize: 14,
     fontWeight: '900',
     marginBottom: 10,

@@ -41,11 +41,13 @@ export const patientsRouter = createTRPCRouter({
       await ensureDB();
       const site = input?.site;
       let sql = "SELECT * FROM patient ORDER BY name ASC";
+      const params: unknown[] = [];
       if (site && site !== "ALL") {
-        sql = `SELECT * FROM patient WHERE site = '${site}' ORDER BY name ASC`;
+        sql = "SELECT * FROM patient WHERE site = ? ORDER BY name ASC";
+        params.push(site);
       }
       console.log("[patients.list] Fetching patients, site:", site || "ALL");
-      const results = await dbQuery<Record<string, unknown>>(sql);
+      const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[patients.list] Found", results.length, "patients");
       return results;
     }),
@@ -56,8 +58,8 @@ export const patientsRouter = createTRPCRouter({
       await ensureDB();
       console.log("[patients.seed] Seeding", input.patients.length, "patients");
 
-      const existing = await dbQuery<Record<string, unknown>>("SELECT count() FROM patient GROUP ALL");
-      const count = existing.length > 0 ? (existing[0] as { count: number }).count : 0;
+      const existing = await dbQuery<{ COUNT: number }>("SELECT COUNT(*) as COUNT FROM patient");
+      const count = existing.length > 0 ? existing[0].COUNT : 0;
 
       if (count > 0) {
         console.log("[patients.seed] DB already has", count, "patients, skipping seed");
@@ -65,39 +67,41 @@ export const patientsRouter = createTRPCRouter({
       }
 
       for (const p of input.patients) {
-        const escapedName = p.name.replace(/'/g, "\\'");
-        await dbQuery(`
-          CREATE patient SET
-            name = '${escapedName}',
-            age = ${p.age},
-            g = '${p.g}',
-            sr = '${p.sr}',
-            ar = ${p.ar},
-            gr = ${p.gr},
-            htn = ${p.htn},
-            dm = ${p.dm},
-            oa = ${p.oa},
-            osteo = ${p.osteo},
-            injury = ${p.injury},
-            surgical = ${p.surgical},
-            thyroid = ${p.thyroid},
-            flex = ${p.flex},
-            ext = ${p.ext},
-            lrot = ${p.lrot},
-            rrot = ${p.rrot},
-            start = ${p.start},
-            fab_l = ${p.fab_l},
-            fair_l = ${p.fair_l},
-            slr_l = ${p.slr_l},
-            fab_r = ${p.fab_r},
-            fair_r = ${p.fair_r},
-            slr_r = ${p.slr_r},
-            hyp = ${p.hyp},
-            tend = ${p.tend},
-            tight = ${p.tight},
-            knots = ${p.knots},
-            site = '${p.site}'
-        `);
+        await dbQuery(
+          `INSERT INTO patient (name, age, g, sr, ar, gr, htn, dm, oa, osteo, injury, surgical, thyroid, flex, ext, lrot, rrot, start, fab_l, fair_l, slr_l, fab_r, fair_r, slr_r, hyp, tend, tight, knots, site)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            p.name,
+            p.age,
+            p.g,
+            p.sr,
+            p.ar,
+            p.gr,
+            p.htn,
+            p.dm,
+            p.oa,
+            p.osteo,
+            p.injury,
+            p.surgical,
+            p.thyroid,
+            p.flex,
+            p.ext,
+            p.lrot,
+            p.rrot,
+            p.start,
+            p.fab_l,
+            p.fair_l,
+            p.slr_l,
+            p.fab_r,
+            p.fair_r,
+            p.slr_r,
+            p.hyp,
+            p.tend,
+            p.tight,
+            p.knots,
+            p.site,
+          ],
+        );
       }
 
       console.log("[patients.seed] Seeded", input.patients.length, "patients successfully");
@@ -111,16 +115,12 @@ export const patientsRouter = createTRPCRouter({
     }))
     .mutation(async ({ input }) => {
       await ensureDB();
-      const escapedName = input.name.replace(/'/g, "\\'");
-      const sets = Object.entries(input.fields)
-        .map(([k, v]) => {
-          if (typeof v === "string") return `${k} = '${v.replace(/'/g, "\\'")}'`;
-          return `${k} = ${v}`;
-        })
-        .join(", ");
+      const entries = Object.entries(input.fields);
+      const setClause = entries.map(([k]) => `${k} = ?`).join(", ");
+      const values = [...entries.map(([, v]) => v), input.name];
 
-      console.log("[patients.update] Updating patient:", input.name, "fields:", sets);
-      await dbQuery(`UPDATE patient SET ${sets} WHERE name = '${escapedName}'`);
+      console.log("[patients.update] Updating patient:", input.name, "fields:", Object.keys(input.fields));
+      await dbQuery(`UPDATE patient SET ${setClause} WHERE name = ?`, values);
       return { success: true };
     }),
 });

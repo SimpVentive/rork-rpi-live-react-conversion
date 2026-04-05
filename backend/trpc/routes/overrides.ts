@@ -9,11 +9,13 @@ export const overridesRouter = createTRPCRouter({
       await ensureDB();
       const site = input?.site;
       let sql = "SELECT * FROM manual_override";
+      const params: unknown[] = [];
       if (site && site !== "ALL") {
-        sql = `SELECT * FROM manual_override WHERE site = '${site}'`;
+        sql = "SELECT * FROM manual_override WHERE site = ?";
+        params.push(site);
       }
       console.log("[overrides.listManual] Fetching manual overrides");
-      const results = await dbQuery<Record<string, unknown>>(sql);
+      const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[overrides.listManual] Found", results.length, "overrides");
 
       const map: Record<string, string> = {};
@@ -31,17 +33,13 @@ export const overridesRouter = createTRPCRouter({
     }))
     .mutation(async ({ input }) => {
       await ensureDB();
-      const escapedName = input.patient_name.replace(/'/g, "\\'");
       console.log("[overrides.setManual] Setting manual override:", input.patient_name, "->", input.risk);
 
-      await dbQuery(`DELETE manual_override WHERE patient_name = '${escapedName}'`);
-      await dbQuery(`
-        CREATE manual_override SET
-          patient_name = '${escapedName}',
-          site = '${input.site}',
-          risk = '${input.risk}',
-          updated_at = '${new Date().toISOString()}'
-      `);
+      await dbQuery("DELETE FROM manual_override WHERE patient_name = ?", [input.patient_name]);
+      await dbQuery(
+        "INSERT INTO manual_override (patient_name, site, risk, updated_at) VALUES (?, ?, ?, ?)",
+        [input.patient_name, input.site, input.risk, new Date().toISOString()],
+      );
       return { success: true };
     }),
 
@@ -51,11 +49,13 @@ export const overridesRouter = createTRPCRouter({
       await ensureDB();
       const site = input?.site;
       let sql = "SELECT * FROM life_override";
+      const params: unknown[] = [];
       if (site && site !== "ALL") {
-        sql = `SELECT * FROM life_override WHERE site = '${site}'`;
+        sql = "SELECT * FROM life_override WHERE site = ?";
+        params.push(site);
       }
       console.log("[overrides.listLife] Fetching life overrides");
-      const results = await dbQuery<Record<string, unknown>>(sql);
+      const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[overrides.listLife] Found", results.length, "life overrides");
 
       const map: Record<string, Record<string, unknown>> = {};
@@ -86,22 +86,24 @@ export const overridesRouter = createTRPCRouter({
     }))
     .mutation(async ({ input }) => {
       await ensureDB();
-      const escapedName = input.patient_name.replace(/'/g, "\\'");
       console.log("[overrides.setLife] Setting life override for:", input.patient_name);
 
-      await dbQuery(`DELETE life_override WHERE patient_name = '${escapedName}'`);
-      await dbQuery(`
-        CREATE life_override SET
-          patient_name = '${escapedName}',
-          site = '${input.site}',
-          smoke = ${input.smoke},
-          smokeyrs = '${input.smokeyrs}',
-          alcohol = ${input.alcohol},
-          alcoholyrs = '${input.alcoholyrs}',
-          sitting = ${input.sitting},
-          standing = ${input.standing},
-          updated_at = '${new Date().toISOString()}'
-      `);
+      await dbQuery("DELETE FROM life_override WHERE patient_name = ?", [input.patient_name]);
+      await dbQuery(
+        `INSERT INTO life_override (patient_name, site, smoke, smokeyrs, alcohol, alcoholyrs, sitting, standing, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          input.patient_name,
+          input.site,
+          input.smoke,
+          input.smokeyrs,
+          input.alcohol,
+          input.alcoholyrs,
+          input.sitting,
+          input.standing,
+          new Date().toISOString(),
+        ],
+      );
       return { success: true };
     }),
 });

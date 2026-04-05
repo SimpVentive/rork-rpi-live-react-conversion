@@ -19,11 +19,13 @@ export const cohortAnalysisRouter = createTRPCRouter({
       await ensureDB();
       const site = input?.site;
       let sql = "SELECT * FROM cohort_analysis ORDER BY ts DESC";
+      const params: unknown[] = [];
       if (site && site !== "ALL") {
-        sql = `SELECT * FROM cohort_analysis WHERE site = '${site}' ORDER BY ts DESC`;
+        sql = "SELECT * FROM cohort_analysis WHERE site = ? ORDER BY ts DESC";
+        params.push(site);
       }
       console.log("[cohortAnalysis.list] Fetching cohort analyses");
-      const results = await dbQuery<Record<string, unknown>>(sql);
+      const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[cohortAnalysis.list] Found", results.length, "analyses");
       return results;
     }),
@@ -82,52 +84,55 @@ export const cohortAnalysisRouter = createTRPCRouter({
       const weightsJson = JSON.stringify(input.weights);
       const subWeightsJson = JSON.stringify(input.sub_weights);
 
-      await dbQuery(`
-        CREATE cohort_analysis SET
-          scenario_id = '${input.scenario_id}',
-          site = '${input.site}',
-          ts = '${input.ts}',
-          total_patients = ${input.total_patients},
-          classified_patients = ${input.classified_patients},
-          green_count = ${input.green_count},
-          amber_count = ${input.amber_count},
-          red_count = ${input.red_count},
-          sensitivity = ${input.sensitivity},
-          precision_val = ${input.precision_val},
-          accuracy = ${input.accuracy},
-          concordant = ${input.concordant},
-          partial = ${input.partial},
-          discordant = ${input.discordant},
-          unclassified = ${input.unclassified},
-          avg_rpi_high = ${input.avg_rpi_high},
-          avg_rpi_mod = ${input.avg_rpi_mod},
-          avg_rpi_low = ${input.avg_rpi_low},
-          avg_ratio = ${input.avg_ratio},
-          perfect_match_count = ${input.perfect_match_count},
-          domain_avg_start_high = ${input.domain_avg_start_high},
-          domain_avg_start_mod = ${input.domain_avg_start_mod},
-          domain_avg_start_low = ${input.domain_avg_start_low},
-          domain_avg_rom_high = ${input.domain_avg_rom_high},
-          domain_avg_rom_mod = ${input.domain_avg_rom_mod},
-          domain_avg_rom_low = ${input.domain_avg_rom_low},
-          domain_avg_physio_high = ${input.domain_avg_physio_high},
-          domain_avg_physio_mod = ${input.domain_avg_physio_mod},
-          domain_avg_physio_low = ${input.domain_avg_physio_low},
-          domain_avg_anthro_high = ${input.domain_avg_anthro_high},
-          domain_avg_anthro_mod = ${input.domain_avg_anthro_mod},
-          domain_avg_anthro_low = ${input.domain_avg_anthro_low},
-          domain_avg_comor_high = ${input.domain_avg_comor_high},
-          domain_avg_comor_mod = ${input.domain_avg_comor_mod},
-          domain_avg_comor_low = ${input.domain_avg_comor_low},
-          domain_avg_life_high = ${input.domain_avg_life_high},
-          domain_avg_life_mod = ${input.domain_avg_life_mod},
-          domain_avg_life_low = ${input.domain_avg_life_low},
-          site_breakdown = ${siteBreakdownJson},
-          weights = ${weightsJson},
-          sub_weights = ${subWeightsJson},
-          tga = ${input.tga},
-          tar = ${input.tar}
-      `);
+      await dbQuery(
+        `INSERT INTO cohort_analysis (scenario_id, site, ts, total_patients, classified_patients, green_count, amber_count, red_count, sensitivity, precision_val, accuracy, concordant, partial, discordant, unclassified, avg_rpi_high, avg_rpi_mod, avg_rpi_low, avg_ratio, perfect_match_count, domain_avg_start_high, domain_avg_start_mod, domain_avg_start_low, domain_avg_rom_high, domain_avg_rom_mod, domain_avg_rom_low, domain_avg_physio_high, domain_avg_physio_mod, domain_avg_physio_low, domain_avg_anthro_high, domain_avg_anthro_mod, domain_avg_anthro_low, domain_avg_comor_high, domain_avg_comor_mod, domain_avg_comor_low, domain_avg_life_high, domain_avg_life_mod, domain_avg_life_low, site_breakdown, weights, sub_weights, tga, tar)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          input.scenario_id,
+          input.site,
+          input.ts,
+          input.total_patients,
+          input.classified_patients,
+          input.green_count,
+          input.amber_count,
+          input.red_count,
+          input.sensitivity,
+          input.precision_val,
+          input.accuracy,
+          input.concordant,
+          input.partial,
+          input.discordant,
+          input.unclassified,
+          input.avg_rpi_high,
+          input.avg_rpi_mod,
+          input.avg_rpi_low,
+          input.avg_ratio,
+          input.perfect_match_count,
+          input.domain_avg_start_high,
+          input.domain_avg_start_mod,
+          input.domain_avg_start_low,
+          input.domain_avg_rom_high,
+          input.domain_avg_rom_mod,
+          input.domain_avg_rom_low,
+          input.domain_avg_physio_high,
+          input.domain_avg_physio_mod,
+          input.domain_avg_physio_low,
+          input.domain_avg_anthro_high,
+          input.domain_avg_anthro_mod,
+          input.domain_avg_anthro_low,
+          input.domain_avg_comor_high,
+          input.domain_avg_comor_mod,
+          input.domain_avg_comor_low,
+          input.domain_avg_life_high,
+          input.domain_avg_life_mod,
+          input.domain_avg_life_low,
+          siteBreakdownJson,
+          weightsJson,
+          subWeightsJson,
+          input.tga,
+          input.tar,
+        ],
+      );
 
       console.log("[cohortAnalysis.save] Cohort analysis saved successfully");
       return { success: true };
@@ -138,7 +143,7 @@ export const cohortAnalysisRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       await ensureDB();
       console.log("[cohortAnalysis.deleteByScenario] Deleting for scenario:", input.scenario_id);
-      await dbQuery(`DELETE cohort_analysis WHERE scenario_id = '${input.scenario_id}'`);
+      await dbQuery("DELETE FROM cohort_analysis WHERE scenario_id = ?", [input.scenario_id]);
       return { success: true };
     }),
 
@@ -148,9 +153,9 @@ export const cohortAnalysisRouter = createTRPCRouter({
       await ensureDB();
       const site = input?.site;
       if (site && site !== "ALL") {
-        await dbQuery(`DELETE cohort_analysis WHERE site = '${site}'`);
+        await dbQuery("DELETE FROM cohort_analysis WHERE site = ?", [site]);
       } else {
-        await dbQuery("DELETE cohort_analysis");
+        await dbQuery("DELETE FROM cohort_analysis");
       }
       return { success: true };
     }),

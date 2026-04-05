@@ -32,10 +32,13 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
 
   const siteParam = isAdmin ? 'ALL' : (currentSite || 'ALL');
 
+const [isOfflineMode, setIsOfflineMode] = useState(false);
+
   const patientsQuery = useQuery({
     queryKey: ['patients', siteParam],
     queryFn: async () => {
       try {
+        setIsOfflineMode(false);
         console.log('[RPIContext] Fetching patients from DB, site:', siteParam);
         const dbPatients = await api.patients.list.query({ site: siteParam });
         console.log('[RPIContext] Got', dbPatients.length, 'patients from DB');
@@ -113,6 +116,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
         })) as PatientRaw[];
       } catch (err) {
         console.log('[RPIContext] Backend unavailable, using static data. Error:', err);
+        setIsOfflineMode(true);
         const staticPatients = parseAllPatients();
         if (!isAdmin && currentSite) {
           return staticPatients.filter((p) => p.site === currentSite);
@@ -653,7 +657,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   }, []);
 
   const isDataLoading = patientsQuery.isLoading || manualOverridesQuery.isLoading || lifeOverridesQuery.isLoading;
-  const isDbConnected = !patientsQuery.isError;
+  const isDbConnected = !isOfflineMode && !patientsQuery.isError;
 
   return useMemo(() => ({
     patients,

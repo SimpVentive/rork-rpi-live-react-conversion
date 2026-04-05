@@ -1,276 +1,302 @@
-const DB_ENDPOINT = process.env.EXPO_PUBLIC_RORK_DB_ENDPOINT || "";
-const DB_NAMESPACE = process.env.EXPO_PUBLIC_RORK_DB_NAMESPACE || "";
-const DB_TOKEN = process.env.EXPO_PUBLIC_RORK_DB_TOKEN || "";
+import mysql from "mysql2/promise";
 
-const DB_NAME = "rpi_live";
+const MYSQL_HOST = process.env.MYSQL_HOST || "localhost";
+const MYSQL_PORT = parseInt(process.env.MYSQL_PORT || "3306", 10);
+const MYSQL_USER = process.env.MYSQL_USER || "root";
+const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || "";
+const MYSQL_DATABASE = process.env.MYSQL_DATABASE || "rpi_live";
 
-interface SurrealResponse<T = unknown> {
-  result: T;
-  status: string;
-  time: string;
+let pool: mysql.Pool | null = null;
+
+function getPool(): mysql.Pool {
+  if (!pool) {
+    pool = mysql.createPool({
+      host: MYSQL_HOST,
+      port: MYSQL_PORT,
+      user: MYSQL_USER,
+      password: MYSQL_PASSWORD,
+      database: MYSQL_DATABASE,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelayMs: 0,
+    });
+
+    console.log(
+      `[DB] MySQL connection pool created for ${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}`,
+    );
+  }
+  return pool;
 }
 
-export async function dbQuery<T = unknown>(
+export async function query<T = unknown>(
   sql: string,
-  vars?: Record<string, unknown>,
+  values?: unknown[],
 ): Promise<T[]> {
-  const url = `${DB_ENDPOINT}/sql`;
-  const body = vars
-    ? JSON.stringify({ query: sql, variables: vars })
-    : sql;
+  const conn = getPool();
+  try {
+    console.log(
+      "[DB] Executing query:",
+      sql.substring(0, 200),
+      values ? `with ${values.length} params` : "",
+    );
 
-  console.log("[DB] Executing query:", sql.substring(0, 200));
+    const [results] = await (conn as any).query(sql, values);
+    console.log("[DB] Query returned", Array.isArray(results) ? results.length : 1, "rows");
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": vars ? "application/json" : "text/plain",
-      Authorization: `Bearer ${DB_TOKEN}`,
-      NS: DB_NAMESPACE,
-      DB: DB_NAME,
-      Accept: "application/json",
-    },
-    body,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("[DB] Query failed:", res.status, text);
-    throw new Error(`DB query failed: ${res.status} ${text}`);
+    return (Array.isArray(results) ? results : [results]) as T[];
+  } catch (err) {
+    console.error("[DB] Query failed:", err);
+    throw err;
   }
-
-  const data = (await res.json()) as SurrealResponse<T>[];
-  console.log("[DB] Query returned", data.length, "result sets");
-
-  const results: T[] = [];
-  for (const entry of data) {
-    if (entry.status === "OK" && entry.result !== null && entry.result !== undefined) {
-      if (Array.isArray(entry.result)) {
-        results.push(...(entry.result as T[]));
-      } else {
-        results.push(entry.result as T);
-      }
-    }
-  }
-  return results;
 }
 
-export async function dbQuerySingle<T = unknown>(
+export async function querySingle<T = unknown>(
   sql: string,
+  values?: unknown[],
 ): Promise<T | null> {
-  const results = await dbQuery<T>(sql);
+  const results = await query<T>(sql, values);
   return results.length > 0 ? results[0] : null;
 }
 
 export async function initDB(): Promise<void> {
-  console.log("[DB] Initializing database tables...");
+  console.log("[DB] Initializing MySQL database tables...");
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS patient SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS name ON patient TYPE string;
-    DEFINE FIELD IF NOT EXISTS age ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS g ON patient TYPE string;
-    DEFINE FIELD IF NOT EXISTS sr ON patient TYPE string;
-    DEFINE FIELD IF NOT EXISTS ar ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS gr ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS htn ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS dm ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS oa ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS osteo ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS injury ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS surgical ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS thyroid ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS flex ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS ext ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS lrot ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS rrot ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS start ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS fab_l ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS fair_l ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS slr_l ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS fab_r ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS fair_r ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS slr_r ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS hyp ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS tend ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS tight ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS knots ON patient TYPE int;
-    DEFINE FIELD IF NOT EXISTS site ON patient TYPE string;
-    DEFINE INDEX IF NOT EXISTS idx_patient_name ON patient FIELDS name UNIQUE;
-    DEFINE INDEX IF NOT EXISTS idx_patient_site ON patient FIELDS site;
+  // Create patient table
+  await query(`
+    CREATE TABLE IF NOT EXISTS patient (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL UNIQUE,
+      age INT,
+      g VARCHAR(50),
+      sr VARCHAR(50),
+      ar INT,
+      gr INT,
+      htn INT,
+      dm INT,
+      oa INT,
+      osteo INT,
+      injury INT,
+      surgical INT,
+      thyroid INT,
+      flex INT,
+      ext INT,
+      lrot INT,
+      rrot INT,
+      start INT,
+      fab_l INT,
+      fair_l INT,
+      slr_l INT,
+      fab_r INT,
+      fair_r INT,
+      slr_r INT,
+      hyp INT,
+      tend INT,
+      tight INT,
+      knots INT,
+      site VARCHAR(255),
+      INDEX idx_patient_site (site)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS scenario SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS ts ON scenario TYPE string;
-    DEFINE FIELD IF NOT EXISTS site ON scenario TYPE string;
-    DEFINE FIELD IF NOT EXISTS weights ON scenario TYPE object;
-    DEFINE FIELD IF NOT EXISTS sub_weights ON scenario TYPE object;
-    DEFINE FIELD IF NOT EXISTS tga ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS tar ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS green ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS amber ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS red ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS total ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS sens ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS prec ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS acc ON scenario TYPE int;
-    DEFINE FIELD IF NOT EXISTS patients ON scenario TYPE array;
-    DEFINE INDEX IF NOT EXISTS idx_scenario_site ON scenario FIELDS site;
+  // Create scenario table
+  await query(`
+    CREATE TABLE IF NOT EXISTS scenario (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      ts VARCHAR(255),
+      site VARCHAR(255),
+      weights JSON,
+      sub_weights JSON,
+      tga INT,
+      tar INT,
+      green INT,
+      amber INT,
+      red INT,
+      total INT,
+      sens INT,
+      prec INT,
+      acc INT,
+      patients JSON,
+      INDEX idx_scenario_site (site)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS patient_result SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS scenario_id ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS patient_name ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS site ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS age ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS gender ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS manual_risk ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS ar ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS gr ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS htn ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS dm ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS oa ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS osteo ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS injury ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS surgical ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS thyroid ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS flex ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS ext ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS lrot ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS rrot ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS start_raw ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS fab_l ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS fair_l ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS slr_l ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS fab_r ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS fair_r ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS slr_r ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS hyp ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS tend ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS tight ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS knots ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS smoke ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS smokeyrs ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS alcohol ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS alcoholyrs ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS sitting ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS standing ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS score_start ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS score_rom ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS score_physio ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS score_anthro ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS score_comor ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS score_life ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS rpi ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS tier ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS rpi_numeric ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS manual_numeric ON patient_result TYPE int;
-    DEFINE FIELD IF NOT EXISTS ratio ON patient_result TYPE float;
-    DEFINE FIELD IF NOT EXISTS ratio_distance ON patient_result TYPE float;
-    DEFINE FIELD IF NOT EXISTS match_type ON patient_result TYPE string;
-    DEFINE FIELD IF NOT EXISTS created_at ON patient_result TYPE string;
-    DEFINE INDEX IF NOT EXISTS idx_pr_scenario ON patient_result FIELDS scenario_id;
-    DEFINE INDEX IF NOT EXISTS idx_pr_patient ON patient_result FIELDS patient_name;
-    DEFINE INDEX IF NOT EXISTS idx_pr_site ON patient_result FIELDS site;
+  // Create patient_result table
+  await query(`
+    CREATE TABLE IF NOT EXISTS patient_result (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      scenario_id VARCHAR(255),
+      patient_name VARCHAR(255),
+      site VARCHAR(255),
+      age INT,
+      gender VARCHAR(50),
+      manual_risk VARCHAR(50),
+      ar INT,
+      gr INT,
+      htn INT,
+      dm INT,
+      oa INT,
+      osteo INT,
+      injury INT,
+      surgical INT,
+      thyroid INT,
+      flex INT,
+      ext INT,
+      lrot INT,
+      rrot INT,
+      start_raw INT,
+      fab_l INT,
+      fair_l INT,
+      slr_l INT,
+      fab_r INT,
+      fair_r INT,
+      slr_r INT,
+      hyp INT,
+      tend INT,
+      tight INT,
+      knots INT,
+      smoke INT,
+      smokeyrs VARCHAR(255),
+      alcohol INT,
+      alcoholyrs VARCHAR(255),
+      sitting INT,
+      standing INT,
+      score_start INT,
+      score_rom INT,
+      score_physio INT,
+      score_anthro INT,
+      score_comor INT,
+      score_life INT,
+      rpi INT,
+      tier VARCHAR(50),
+      rpi_numeric INT,
+      manual_numeric INT,
+      ratio FLOAT,
+      ratio_distance FLOAT,
+      match_type VARCHAR(50),
+      created_at VARCHAR(255),
+      INDEX idx_pr_scenario (scenario_id),
+      INDEX idx_pr_patient (patient_name),
+      INDEX idx_pr_site (site)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS cohort_analysis SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS scenario_id ON cohort_analysis TYPE string;
-    DEFINE FIELD IF NOT EXISTS site ON cohort_analysis TYPE string;
-    DEFINE FIELD IF NOT EXISTS ts ON cohort_analysis TYPE string;
-    DEFINE FIELD IF NOT EXISTS total_patients ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS classified_patients ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS green_count ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS amber_count ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS red_count ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS sensitivity ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS precision_val ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS accuracy ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS concordant ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS partial ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS discordant ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS unclassified ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS avg_rpi_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS avg_rpi_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS avg_rpi_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS avg_ratio ON cohort_analysis TYPE float;
-    DEFINE FIELD IF NOT EXISTS perfect_match_count ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_start_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_start_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_start_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_rom_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_rom_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_rom_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_physio_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_physio_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_physio_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_anthro_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_anthro_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_anthro_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_comor_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_comor_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_comor_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_life_high ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_life_mod ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS domain_avg_life_low ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS site_breakdown ON cohort_analysis TYPE array;
-    DEFINE FIELD IF NOT EXISTS weights ON cohort_analysis TYPE object;
-    DEFINE FIELD IF NOT EXISTS sub_weights ON cohort_analysis TYPE object;
-    DEFINE FIELD IF NOT EXISTS tga ON cohort_analysis TYPE int;
-    DEFINE FIELD IF NOT EXISTS tar ON cohort_analysis TYPE int;
-    DEFINE INDEX IF NOT EXISTS idx_ca_scenario ON cohort_analysis FIELDS scenario_id;
-    DEFINE INDEX IF NOT EXISTS idx_ca_site ON cohort_analysis FIELDS site;
+  // Create cohort_analysis table
+  await query(`
+    CREATE TABLE IF NOT EXISTS cohort_analysis (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      scenario_id VARCHAR(255),
+      site VARCHAR(255),
+      ts VARCHAR(255),
+      total_patients INT,
+      classified_patients INT,
+      green_count INT,
+      amber_count INT,
+      red_count INT,
+      sensitivity INT,
+      precision_val INT,
+      accuracy INT,
+      concordant INT,
+      partial INT,
+      discordant INT,
+      unclassified INT,
+      avg_rpi_high INT,
+      avg_rpi_mod INT,
+      avg_rpi_low INT,
+      avg_ratio FLOAT,
+      perfect_match_count INT,
+      domain_avg_start_high INT,
+      domain_avg_start_mod INT,
+      domain_avg_start_low INT,
+      domain_avg_rom_high INT,
+      domain_avg_rom_mod INT,
+      domain_avg_rom_low INT,
+      domain_avg_physio_high INT,
+      domain_avg_physio_mod INT,
+      domain_avg_physio_low INT,
+      domain_avg_anthro_high INT,
+      domain_avg_anthro_mod INT,
+      domain_avg_anthro_low INT,
+      domain_avg_comor_high INT,
+      domain_avg_comor_mod INT,
+      domain_avg_comor_low INT,
+      domain_avg_life_high INT,
+      domain_avg_life_mod INT,
+      domain_avg_life_low INT,
+      site_breakdown JSON,
+      weights JSON,
+      sub_weights JSON,
+      tga INT,
+      tar INT,
+      INDEX idx_ca_scenario (scenario_id),
+      INDEX idx_ca_site (site)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS weight_config SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS name ON weight_config TYPE string;
-    DEFINE FIELD IF NOT EXISTS site ON weight_config TYPE string;
-    DEFINE FIELD IF NOT EXISTS is_default ON weight_config TYPE bool;
-    DEFINE FIELD IF NOT EXISTS weights ON weight_config TYPE object;
-    DEFINE FIELD IF NOT EXISTS sub_weights ON weight_config TYPE object;
-    DEFINE FIELD IF NOT EXISTS tga ON weight_config TYPE int;
-    DEFINE FIELD IF NOT EXISTS tar ON weight_config TYPE int;
-    DEFINE FIELD IF NOT EXISTS created_at ON weight_config TYPE string;
-    DEFINE FIELD IF NOT EXISTS updated_at ON weight_config TYPE string;
-    DEFINE INDEX IF NOT EXISTS idx_wc_name ON weight_config FIELDS name UNIQUE;
-    DEFINE INDEX IF NOT EXISTS idx_wc_site ON weight_config FIELDS site;
+  // Create weight_config table
+  await query(`
+    CREATE TABLE IF NOT EXISTS weight_config (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL UNIQUE,
+      site VARCHAR(255),
+      is_default BOOLEAN,
+      weights JSON,
+      sub_weights JSON,
+      tga INT,
+      tar INT,
+      created_at VARCHAR(255),
+      updated_at VARCHAR(255),
+      INDEX idx_wc_site (site)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS manual_override SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS patient_name ON manual_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS site ON manual_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS risk ON manual_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS updated_at ON manual_override TYPE string;
-    DEFINE INDEX IF NOT EXISTS idx_mo_patient ON manual_override FIELDS patient_name UNIQUE;
+  // Create manual_override table
+  await query(`
+    CREATE TABLE IF NOT EXISTS manual_override (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      patient_name VARCHAR(255) NOT NULL UNIQUE,
+      site VARCHAR(255),
+      risk VARCHAR(50),
+      updated_at VARCHAR(255)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  await dbQuery(`
-    DEFINE TABLE IF NOT EXISTS life_override SCHEMAFULL;
-    DEFINE FIELD IF NOT EXISTS patient_name ON life_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS site ON life_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS smoke ON life_override TYPE int;
-    DEFINE FIELD IF NOT EXISTS smokeyrs ON life_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS alcohol ON life_override TYPE int;
-    DEFINE FIELD IF NOT EXISTS alcoholyrs ON life_override TYPE string;
-    DEFINE FIELD IF NOT EXISTS sitting ON life_override TYPE int;
-    DEFINE FIELD IF NOT EXISTS standing ON life_override TYPE int;
-    DEFINE FIELD IF NOT EXISTS updated_at ON life_override TYPE string;
-    DEFINE INDEX IF NOT EXISTS idx_lo_patient ON life_override FIELDS patient_name UNIQUE;
+  // Create life_override table
+  await query(`
+    CREATE TABLE IF NOT EXISTS life_override (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      patient_name VARCHAR(255) NOT NULL UNIQUE,
+      site VARCHAR(255),
+      smoke INT,
+      smokeyrs VARCHAR(255),
+      alcohol INT,
+      alcoholyrs VARCHAR(255),
+      sitting INT,
+      standing INT,
+      updated_at VARCHAR(255)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  console.log("[DB] Database tables initialized (patient, scenario, manual_override, life_override, patient_result, cohort_analysis, weight_config).");
+  console.log(
+    "[DB] Database tables initialized (patient, scenario, manual_override, life_override, patient_result, cohort_analysis, weight_config).",
+  );
 }
 
 let dbInitialized = false;
 
 export async function ensureDB(): Promise<void> {
   if (!dbInitialized) {
-    await initDB();
-    dbInitialized = true;
+    try {
+      await initDB();
+      dbInitialized = true;
+    } catch (err) {
+      console.error("[DB] Failed to initialize database:", err);
+      throw err;
+    }
   }
 }
+
+// Backward compatibility aliases
+export const dbQuery = query;
+export const dbQuerySingle = querySingle;

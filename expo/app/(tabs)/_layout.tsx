@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { LayoutDashboard, Stethoscope, Save, HelpCircle, BrainCircuit } from "lucide-react-native";
+import { LayoutDashboard, Stethoscope, Save, HelpCircle, BrainCircuit, SlidersHorizontal, BarChart3 } from "lucide-react-native";
 import React from "react";
 import Colors from "@/constants/colors";
 
@@ -28,6 +28,20 @@ export default function TabLayout() {
         options={{
           title: "Dashboard",
           tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="rules"
+        options={{
+          title: "Rules",
+          tabBarIcon: ({ color, size }) => <SlidersHorizontal color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: "Analytics",
+          tabBarIcon: ({ color, size }) => <BarChart3 color={color} size={size} />,
         }}
       />
       <Tabs.Screen

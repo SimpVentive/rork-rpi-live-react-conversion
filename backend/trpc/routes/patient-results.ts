@@ -66,14 +66,17 @@ export const patientResultsRouter = createTRPCRouter({
       const site = input?.site;
 
       let sql = "SELECT * FROM patient_result ORDER BY patient_name ASC";
+      const params: unknown[] = [];
       if (scenarioId) {
-        sql = `SELECT * FROM patient_result WHERE scenario_id = '${scenarioId}' ORDER BY patient_name ASC`;
+        sql = "SELECT * FROM patient_result WHERE scenario_id = ? ORDER BY patient_name ASC";
+        params.push(scenarioId);
       } else if (site && site !== "ALL") {
-        sql = `SELECT * FROM patient_result WHERE site = '${site}' ORDER BY patient_name ASC`;
+        sql = "SELECT * FROM patient_result WHERE site = ? ORDER BY patient_name ASC";
+        params.push(site);
       }
 
       console.log("[patientResults.list] Fetching patient results");
-      const results = await dbQuery<Record<string, unknown>>(sql);
+      const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[patientResults.list] Found", results.length, "patient results");
       return results;
     }),
@@ -87,60 +90,62 @@ export const patientResultsRouter = createTRPCRouter({
       console.log("[patientResults.saveBatch] Saving", input.results.length, "patient results");
 
       for (const r of input.results) {
-        const escapedName = r.patient_name.replace(/'/g, "\\'");
-        await dbQuery(`
-          CREATE patient_result SET
-            scenario_id = '${r.scenario_id}',
-            patient_name = '${escapedName}',
-            site = '${r.site}',
-            age = ${r.age},
-            gender = '${r.gender}',
-            manual_risk = '${r.manual_risk}',
-            ar = ${r.ar},
-            gr = ${r.gr},
-            htn = ${r.htn},
-            dm = ${r.dm},
-            oa = ${r.oa},
-            osteo = ${r.osteo},
-            injury = ${r.injury},
-            surgical = ${r.surgical},
-            thyroid = ${r.thyroid},
-            flex = ${r.flex},
-            ext = ${r.ext},
-            lrot = ${r.lrot},
-            rrot = ${r.rrot},
-            start_raw = ${r.start_raw},
-            fab_l = ${r.fab_l},
-            fair_l = ${r.fair_l},
-            slr_l = ${r.slr_l},
-            fab_r = ${r.fab_r},
-            fair_r = ${r.fair_r},
-            slr_r = ${r.slr_r},
-            hyp = ${r.hyp},
-            tend = ${r.tend},
-            tight = ${r.tight},
-            knots = ${r.knots},
-            smoke = ${r.smoke},
-            smokeyrs = '${r.smokeyrs}',
-            alcohol = ${r.alcohol},
-            alcoholyrs = '${r.alcoholyrs}',
-            sitting = ${r.sitting},
-            standing = ${r.standing},
-            score_start = ${r.score_start},
-            score_rom = ${r.score_rom},
-            score_physio = ${r.score_physio},
-            score_anthro = ${r.score_anthro},
-            score_comor = ${r.score_comor},
-            score_life = ${r.score_life},
-            rpi = ${r.rpi},
-            tier = '${r.tier}',
-            rpi_numeric = ${r.rpi_numeric},
-            manual_numeric = ${r.manual_numeric},
-            ratio = ${r.ratio},
-            ratio_distance = ${r.ratio_distance},
-            match_type = '${r.match_type}',
-            created_at = '${new Date().toISOString()}'
-        `);
+        await dbQuery(
+          `INSERT INTO patient_result (scenario_id, patient_name, site, age, gender, manual_risk, ar, gr, htn, dm, oa, osteo, injury, surgical, thyroid, flex, ext, lrot, rrot, start_raw, fab_l, fair_l, slr_l, fab_r, fair_r, slr_r, hyp, tend, tight, knots, smoke, smokeyrs, alcohol, alcoholyrs, sitting, standing, score_start, score_rom, score_physio, score_anthro, score_comor, score_life, rpi, tier, rpi_numeric, manual_numeric, ratio, ratio_distance, match_type, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            r.scenario_id,
+            r.patient_name,
+            r.site,
+            r.age,
+            r.gender,
+            r.manual_risk,
+            r.ar,
+            r.gr,
+            r.htn,
+            r.dm,
+            r.oa,
+            r.osteo,
+            r.injury,
+            r.surgical,
+            r.thyroid,
+            r.flex,
+            r.ext,
+            r.lrot,
+            r.rrot,
+            r.start_raw,
+            r.fab_l,
+            r.fair_l,
+            r.slr_l,
+            r.fab_r,
+            r.fair_r,
+            r.slr_r,
+            r.hyp,
+            r.tend,
+            r.tight,
+            r.knots,
+            r.smoke,
+            r.smokeyrs,
+            r.alcohol,
+            r.alcoholyrs,
+            r.sitting,
+            r.standing,
+            r.score_start,
+            r.score_rom,
+            r.score_physio,
+            r.score_anthro,
+            r.score_comor,
+            r.score_life,
+            r.rpi,
+            r.tier,
+            r.rpi_numeric,
+            r.manual_numeric,
+            r.ratio,
+            r.ratio_distance,
+            r.match_type,
+            new Date().toISOString(),
+          ],
+        );
       }
 
       console.log("[patientResults.saveBatch] Saved", input.results.length, "patient results");
@@ -152,7 +157,7 @@ export const patientResultsRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       await ensureDB();
       console.log("[patientResults.deleteByScenario] Deleting results for scenario:", input.scenario_id);
-      await dbQuery(`DELETE patient_result WHERE scenario_id = '${input.scenario_id}'`);
+      await dbQuery("DELETE FROM patient_result WHERE scenario_id = ?", [input.scenario_id]);
       return { success: true };
     }),
 
@@ -163,10 +168,10 @@ export const patientResultsRouter = createTRPCRouter({
       const site = input?.site;
       if (site && site !== "ALL") {
         console.log("[patientResults.clearAll] Clearing patient results for site:", site);
-        await dbQuery(`DELETE patient_result WHERE site = '${site}'`);
+        await dbQuery("DELETE FROM patient_result WHERE site = ?", [site]);
       } else {
         console.log("[patientResults.clearAll] Clearing all patient results");
-        await dbQuery("DELETE patient_result");
+        await dbQuery("DELETE FROM patient_result");
       }
       return { success: true };
     }),

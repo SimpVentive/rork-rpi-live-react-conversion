@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Image, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, ChevronDown, ArrowRight, LogOut, EyeOff, Database } from 'lucide-react-native';
@@ -36,18 +36,39 @@ function FilterChip({ label, active, onPress }: { label: string; active: boolean
   );
 }
 
-const PatientRow = React.memo(function PatientRow({ p, onPress, displayName }: { p: PatientResult; onPress: () => void; displayName: string }) {
+const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wide }: { p: PatientResult; onPress: () => void; displayName: string; wide: boolean }) {
   const tc = tierColor(p.tier);
   const rc = riskColor(p.sr);
   const match = getMatchType(p.sr, p.tier);
   const matchColor = match === 'Concordant' ? Colors.greenDark : match === 'Partial' ? Colors.amberDark : match === 'Discordant' ? Colors.redDark : Colors.textMuted;
 
+  if (wide) {
+    return (
+      <TouchableOpacity style={styles.tableRow} onPress={onPress} activeOpacity={0.7}>
+        <View style={[styles.patientInfo, styles.nameCell]}>
+          <Text style={styles.patientName} numberOfLines={1}>{displayName}</Text>
+          <Text style={styles.patientMetaText}>{p.age}{p.g} · {p.site}</Text>
+        </View>
+        <Text style={[styles.riskText, { color: rc }]}>{riskLabel(p.sr)}</Text>
+        <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? '#450a0a' : p.tier === 'Amber' ? '#451a03' : '#14532d', borderColor: tc }]}>
+          <Text style={[styles.tierPillText, { color: tc }]}>{p.tier}</Text>
+        </View>
+        <View style={styles.rpiBlock}>
+          <View style={[styles.rpiBar, { width: Math.max(4, p.rpi * 0.6), backgroundColor: tc }]} />
+          <Text style={[styles.rpiScore, { color: tc }]}>{p.rpi}</Text>
+        </View>
+        <Text style={[styles.matchText, { color: matchColor }]}>{match === 'Concordant' ? '✓' : match === 'Partial' ? '~' : '✗'}</Text>
+        <ArrowRight size={16} color={Colors.textMuted} />
+      </TouchableOpacity>
+    );
+  }
+
   return (
-    <TouchableOpacity style={styles.patientRow} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.patientCard} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.patientInfo}>
         <Text style={styles.patientName} numberOfLines={1}>{displayName}</Text>
         <View style={styles.patientMeta}>
-          <Text style={styles.patientAge}>{p.age}{p.g === 'F' ? 'F' : 'M'}</Text>
+          <Text style={styles.patientAge}>{p.age}{p.g}</Text>
           <View style={styles.siteBadge}>
             <Text style={styles.siteBadgeText}>{p.site}</Text>
           </View>
@@ -62,11 +83,7 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName }: {
         <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? '#450a0a' : p.tier === 'Amber' ? '#451a03' : '#14532d', borderColor: tc }]}>
           <Text style={[styles.tierPillText, { color: tc }]}>{p.tier}</Text>
         </View>
-        {match && (
-          <Text style={[styles.matchText, { color: matchColor }]}>
-            {match === 'Concordant' ? '✓' : match === 'Partial' ? '~' : '✗'}
-          </Text>
-        )}
+        <Text style={[styles.matchText, { color: matchColor }]}>{match === 'Concordant' ? '✓' : match === 'Partial' ? '~' : '✗'}</Text>
         <ArrowRight size={16} color={Colors.textMuted} />
       </View>
     </TouchableOpacity>
@@ -76,12 +93,16 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName }: {
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 940;
+
   const {
     stats, filteredResults, results,
     searchQuery, setSearchQuery,
     filterRisk, setFilterRisk,
     filterTier, setFilterTier,
     filterSite, setFilterSite,
+    filterGender, setFilterGender,
     toggleSort, sortCol, sortDir,
     getDisplayName,
     isDataLoading, isDbConnected,
@@ -111,6 +132,12 @@ export default function DashboardScreen() {
     setFilterSite(vals[(idx + 1) % vals.length]);
   }, [filterSite, setFilterSite]);
 
+  const cycleGender = useCallback(() => {
+    const vals = ['', 'M', 'F'];
+    const idx = vals.indexOf(filterGender);
+    setFilterGender(vals[(idx + 1) % vals.length]);
+  }, [filterGender, setFilterGender]);
+
   const handleSortName = useCallback(() => toggleSort('name' as SortColumn), [toggleSort]);
   const handleSortAge = useCallback(() => toggleSort('age' as SortColumn), [toggleSort]);
   const handleSortRpi = useCallback(() => toggleSort('rpi' as SortColumn), [toggleSort]);
@@ -123,7 +150,7 @@ export default function DashboardScreen() {
   }, [sortCol, sortDir]);
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}> 
       <View style={styles.topBar}>
         <View style={styles.topBarLogoRow}>
           <Image source={require('@/assets/images/metaloga-logo.png')} style={styles.logoLeft} resizeMode="contain" />
@@ -137,9 +164,9 @@ export default function DashboardScreen() {
           <View style={styles.topBarLeft}>
             <View style={styles.brandSubRow}>
               <Text style={styles.brandSub}>{siteLabel} · {results.length} patients</Text>
-              <View style={[styles.dbBadge, { backgroundColor: isDbConnected ? '#052e16' : '#450a0a', borderColor: isDbConnected ? '#166534' : '#991b1b' }]}>
+              <View style={[styles.dbBadge, { backgroundColor: isDbConnected ? '#052e16' : '#450a0a', borderColor: isDbConnected ? '#166534' : '#991b1b' }]}> 
                 <Database size={9} color={isDbConnected ? '#4ade80' : '#f87171'} />
-                <Text style={[styles.dbBadgeText, { color: isDbConnected ? '#4ade80' : '#f87171' }]}>
+                <Text style={[styles.dbBadgeText, { color: isDbConnected ? '#4ade80' : '#f87171' }]}> 
                   {isDataLoading ? 'Syncing' : isDbConnected ? 'DB' : 'Offline'}
                 </Text>
               </View>
@@ -172,13 +199,12 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsRow} contentContainerStyle={styles.statsRowContent}>
-          <StatCard label="Total" value={stats.total} sub="4 sites" />
+          <StatCard label="Patients" value={results.length} sub="Full cohort" />
           <StatCard label="Green" value={stats.green} sub="Low risk" color={Colors.greenDark} />
           <StatCard label="Amber" value={stats.amber} sub="Moderate" color={Colors.amberDark} />
           <StatCard label="Red" value={stats.red} sub="High risk" color={Colors.redDark} />
-          <StatCard label="Sensitivity" value={`${stats.sens}%`} sub="High→Red" color={stats.sens >= 70 ? Colors.greenDark : Colors.redDark} />
-          <StatCard label="Precision" value={`${stats.prec}%`} sub="Red→High" color={stats.prec >= 70 ? Colors.greenDark : Colors.amberDark} />
           <StatCard label="Accuracy" value={`${stats.acc}%`} sub="Classified" color={stats.acc >= 75 ? Colors.greenDark : Colors.amberDark} />
+          <StatCard label="Precision" value={`${stats.prec}%`} sub="Red→High" color={stats.prec >= 70 ? Colors.greenDark : Colors.amberDark} />
         </ScrollView>
 
         <View style={styles.registryCard}>
@@ -204,6 +230,7 @@ export default function DashboardScreen() {
             <FilterChip label={filterRisk ? riskLabel(filterRisk) : 'Risk'} active={!!filterRisk} onPress={cycleRisk} />
             <FilterChip label={filterTier || 'Tier'} active={!!filterTier} onPress={cycleTier} />
             <FilterChip label={filterSite || 'Site'} active={!!filterSite} onPress={cycleSite} />
+            <FilterChip label={filterGender || 'Gender'} active={!!filterGender} onPress={cycleGender} />
           </View>
 
           <View style={styles.sortRow}>
@@ -218,8 +245,19 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
+          {isWide && (
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, styles.nameCell]}>Patient</Text>
+              <Text style={styles.tableHeaderText}>Risk</Text>
+              <Text style={styles.tableHeaderText}>Tier</Text>
+              <Text style={styles.tableHeaderText}>RPI</Text>
+              <Text style={styles.tableHeaderText}>Match</Text>
+              <Text style={[styles.tableHeaderText, { width: 24 }]} />
+            </View>
+          )}
+
           {filteredResults.map((p) => (
-            <PatientRow key={p.name} p={p} displayName={getDisplayName(p.name)} onPress={() => handlePatientPress(p.name)} />
+            <PatientRow key={p.name} p={p} displayName={getDisplayName(p.name)} onPress={() => handlePatientPress(p.name)} wide={isWide} />
           ))}
         </View>
       </ScrollView>
@@ -432,6 +470,7 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     paddingHorizontal: 12,
     paddingBottom: 8,
@@ -478,14 +517,42 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
-  patientRow: {
+  tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.surfaceMid,
+  },
+  tableHeaderText: {
+    flex: 1,
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  nameCell: {
+    flex: 2.3,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+  },
+  patientCard: {
+    backgroundColor: '#f8fafc',
+    marginHorizontal: 14,
+    marginVertical: 6,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   patientInfo: {
     flex: 1,
@@ -493,25 +560,30 @@ const styles = StyleSheet.create({
   },
   patientName: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 3,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 2,
   },
   patientMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  patientMetaText: {
+    fontSize: 12,
+    color: Colors.textMuted,
   },
   patientAge: {
     fontSize: 12,
     color: Colors.textMuted,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   siteBadge: {
     backgroundColor: Colors.surfaceMid,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
@@ -528,8 +600,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  rpiBlock: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,

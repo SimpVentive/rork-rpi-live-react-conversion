@@ -9,11 +9,13 @@ export const scenariosRouter = createTRPCRouter({
       await ensureDB();
       const site = input?.site;
       let sql = "SELECT * FROM scenario ORDER BY ts DESC";
+      const params: unknown[] = [];
       if (site && site !== "ALL") {
-        sql = `SELECT * FROM scenario WHERE site = '${site}' ORDER BY ts DESC`;
+        sql = "SELECT * FROM scenario WHERE site = ? ORDER BY ts DESC";
+        params.push(site);
       }
       console.log("[scenarios.list] Fetching scenarios, site:", site || "ALL");
-      const results = await dbQuery<Record<string, unknown>>(sql);
+      const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[scenarios.list] Found", results.length, "scenarios");
       return results;
     }),
@@ -49,26 +51,29 @@ export const scenariosRouter = createTRPCRouter({
       const subWeightsJson = JSON.stringify(input.sub_weights);
       const patientsJson = JSON.stringify(input.patients);
 
-      const results = await dbQuery<Record<string, unknown>>(`
-        CREATE scenario SET
-          site = '${input.site}',
-          ts = '${input.ts}',
-          weights = ${weightsJson},
-          sub_weights = ${subWeightsJson},
-          tga = ${input.tga},
-          tar = ${input.tar},
-          green = ${input.green},
-          amber = ${input.amber},
-          red = ${input.red},
-          total = ${input.total},
-          sens = ${input.sens},
-          prec = ${input.prec},
-          acc = ${input.acc},
-          patients = ${patientsJson}
-      `);
+      await dbQuery(
+        `INSERT INTO scenario (site, ts, weights, sub_weights, tga, tar, green, amber, red, total, sens, prec, acc, patients)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          input.site,
+          input.ts,
+          weightsJson,
+          subWeightsJson,
+          input.tga,
+          input.tar,
+          input.green,
+          input.amber,
+          input.red,
+          input.total,
+          input.sens,
+          input.prec,
+          input.acc,
+          patientsJson,
+        ],
+      );
 
       console.log("[scenarios.save] Scenario saved successfully");
-      return results.length > 0 ? results[0] : { success: true };
+      return { success: true };
     }),
 
   delete: publicProcedure
@@ -76,7 +81,7 @@ export const scenariosRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       await ensureDB();
       console.log("[scenarios.delete] Deleting scenario:", input.id);
-      await dbQuery(`DELETE ${input.id}`);
+      await dbQuery("DELETE FROM scenario WHERE id = ?", [input.id]);
       return { success: true };
     }),
 
@@ -87,10 +92,10 @@ export const scenariosRouter = createTRPCRouter({
       const site = input?.site;
       if (site && site !== "ALL") {
         console.log("[scenarios.clearAll] Clearing scenarios for site:", site);
-        await dbQuery(`DELETE scenario WHERE site = '${site}'`);
+        await dbQuery("DELETE FROM scenario WHERE site = ?", [site]);
       } else {
         console.log("[scenarios.clearAll] Clearing all scenarios");
-        await dbQuery("DELETE scenario");
+        await dbQuery("DELETE FROM scenario");
       }
       return { success: true };
     }),

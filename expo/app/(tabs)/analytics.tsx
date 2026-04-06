@@ -32,6 +32,7 @@ type EnrichedPatient = {
 type ChartState = {
   demographics: DemographicKey[];
   clinical: ClinicalKey[];
+  subgroupFilters: Partial<Record<DemographicKey, string[]>>;
 };
 
 type SingleMetricRow = {
@@ -62,10 +63,10 @@ type GroupedMetricRow = {
 };
 
 type AnalysisResult =
-  | { type: 'horizontal'; title: string; excluded: number; rows: SingleMetricRow[]; chartWidth: number; color: string }
-  | { type: 'grouped'; title: string; excluded: number; groups: GroupedMetricRow[]; metrics: ClinicalKey[]; chartWidth: number }
-  | { type: 'stacked'; title: string; excluded: number; rows: TierDistributionRow[]; chartWidth: number }
-  | { type: 'heatmap'; title: string; excluded: number; rowLabels: string[]; columnLabels: string[]; cells: HeatmapCell[] };
+  | { type: 'horizontal'; title: string; excluded: number; filteredOut: number; rows: SingleMetricRow[]; chartWidth: number; color: string }
+  | { type: 'grouped'; title: string; excluded: number; filteredOut: number; groups: GroupedMetricRow[]; metrics: ClinicalKey[]; chartWidth: number }
+  | { type: 'stacked'; title: string; excluded: number; filteredOut: number; rows: TierDistributionRow[]; chartWidth: number }
+  | { type: 'heatmap'; title: string; excluded: number; filteredOut: number; rowLabels: string[]; columnLabels: string[]; cells: HeatmapCell[] };
 
 const CHART_COLORS = ['#1E40AF', '#7C3AED', '#0891B2'];
 const CLINICAL_COLORS: Record<ClinicalKey, string> = {
@@ -165,6 +166,50 @@ function getAverageMetricValue(key: ClinicalKey, row: EnrichedPatient): number |
   if (key === 'comor') return row.comor;
   if (key === 'life') return row.life;
   return null;
+}
+
+function getSelectedBands(
+  key: DemographicKey,
+  subgroupFilters: Partial<Record<DemographicKey, string[]>>,
+): string[] {
+  const selected = subgroupFilters[key];
+  if (!selected || selected.length === 0) return getDemographicOrder(key);
+  return getDemographicOrder(key).filter((band) => selected.includes(band));
+}
+
+function getAnalysisExplanation(analysis: AnalysisResult | null): string | null {
+  if (!analysis) return null;
+
+  if (analysis.type === 'horizontal') {
+    if (analysis.rows.length === 0) return 'No matching patients were available for the selected subgroup filters, so there is nothing to compare.';
+    const sorted = [...analysis.rows].sort((a, b) => b.value - a.value);
+    const highest = sorted[0];
+    const lowest = sorted[sorted.length - 1];
+    return `${highest.label} has the highest ${analysis.title.toLowerCase()} at ${Math.round(highest.value)}, while ${lowest.label} is lowest at ${Math.round(lowest.value)}. This is a direct subgroup comparison for the selected clinical measure.`;
+  }
+
+  if (analysis.type === 'grouped') {
+    if (analysis.groups.length === 0) return 'No matching patients were available for the selected subgroup filters, so there is nothing to compare.';
+    const summary = analysis.metrics.map((metric) => {
+      const ranked = [...analysis.groups]
+        .map((group) => ({ label: group.label, value: group.values[metric] || 0 }))
+        .sort((a, b) => b.value - a.value);
+      return `${getClinicalTitle(metric)} is highest in ${ranked[0].label}`;
+    }).join('. ');
+    return `${summary}. Use this chart to compare how multiple clinical measures move across the same demographic subgroups.`;
+  }
+
+  if (analysis.type === 'stacked') {
+    if (analysis.rows.length === 0) return 'No matching patients were available for the selected subgroup filters, so there is nothing to compare.';
+    const redLeader = [...analysis.rows].sort((a, b) => b.red - a.red)[0];
+    const greenLeader = [...analysis.rows].sort((a, b) => b.green - a.green)[0];
+    return `${redLeader.label} has the highest red-tier share, while ${greenLeader.label} has the strongest green-tier share. This chart shows how tier mix changes across the selected demographic subgroups rather than just average score.`;
+  }
+
+  if (analysis.cells.length === 0) return 'No matching patients were available for the selected subgroup filters, so there is nothing to compare.';
+  const hottest = [...analysis.cells].sort((a, b) => b.value - a.value)[0];
+  const coolest = [...analysis.cells].sort((a, b) => a.value - b.value)[0];
+  return `${hottest.rowLabel} × ${hottest.columnLabel} has the highest value at ${Math.round(hottest.value)}, while ${coolest.rowLabel} × ${coolest.columnLabel} is lowest at ${Math.round(coolest.value)}. This heatmap highlights where combinations of two demographic subgroup filters concentrate higher or lower clinical values.`;
 }
 
 function SelectionChip({
@@ -332,6 +377,7 @@ export default function AnalyticsExplorerScreen() {
   const { patients, results, lifeOverrides } = useRPI();
   const [selectedDemographics, setSelectedDemographics] = useState<DemographicKey[]>([]);
   const [selectedClinical, setSelectedClinical] = useState<ClinicalKey[]>([]);
+  const [subgroupFilters, setSubgroupFilters] = useState<Partial<Record<DemographicKey, string[]>>>({});
   const [generatedChart, setGeneratedChart] = useState<ChartState | null>(null);
 
   const resultMap = useMemo(() => new Map(results.map((item) => [item.name, item])), [results]);
@@ -363,8 +409,9 @@ export default function AnalyticsExplorerScreen() {
   }, [patients, resultMap, lifeOverrides]);
 
   const minimumMet = selectedDemographics.length >= 1 && selectedClinical.length >= 1;
+  const allDemographicsHaveSubgroups = selectedDemographics.every((key) => getSelectedBands(key, subgroupFilters).length > 0);
   const includesTierDistribution = selectedClinical.includes('tierDistribution');
-  const combinationSupported = minimumMet && (
+  const combinationSupported = minimumMet && allDemographicsHaveSubgroups && (
     (selectedDemographics.length === 1 && !includesTierDistribution && selectedClinical.length <= 3) ||
     (selectedDemographics.length === 1 && includesTierDistribution && selectedClinical.length === 1) ||
     (selectedDemographics.length === 2 && selectedClinical.length === 1 && !includesTierDistribution)
@@ -375,13 +422,23 @@ export default function AnalyticsExplorerScreen() {
 
     const demoKeys = generatedChart.demographics;
     const clinicalKeys = generatedChart.clinical;
+    const activeSubgroups = generatedChart.subgroupFilters;
     const chartWidth = Math.min(width - 56, 980);
     const excluded = { count: 0 };
+    const filteredOut = { count: 0 };
 
     const filtered = enrichedPatients.filter((row) => {
-      const demoOk = demoKeys.every((key) => getBandValue(key, row) !== null);
-      if (!demoOk) {
+      const hasMissingDemo = demoKeys.some((key) => getBandValue(key, row) === null);
+      if (hasMissingDemo) {
         excluded.count += 1;
+        return false;
+      }
+      const insideSelectedSubgroups = demoKeys.every((key) => {
+        const band = getBandValue(key, row);
+        return band != null && getSelectedBands(key, activeSubgroups).includes(band);
+      });
+      if (!insideSelectedSubgroups) {
+        filteredOut.count += 1;
         return false;
       }
       return true;
@@ -389,7 +446,7 @@ export default function AnalyticsExplorerScreen() {
 
     if (demoKeys.length === 1 && clinicalKeys.length === 1 && clinicalKeys[0] === 'tierDistribution') {
       const demoKey = demoKeys[0];
-      const rows = getDemographicOrder(demoKey).map((band) => {
+      const rows = getSelectedBands(demoKey, activeSubgroups).map((band) => {
         const members = filtered.filter((row) => getBandValue(demoKey, row) === band && row.tier);
         const count = members.length;
         const green = count ? (members.filter((row) => row.tier === 'Green').length / count) * 100 : 0;
@@ -401,6 +458,7 @@ export default function AnalyticsExplorerScreen() {
         type: 'stacked',
         title: `${getClinicalTitle('tierDistribution')} by ${getDemographicTitle(demoKey)}`,
         excluded: excluded.count,
+        filteredOut: filteredOut.count,
         rows,
         chartWidth,
       };
@@ -409,8 +467,8 @@ export default function AnalyticsExplorerScreen() {
     if (demoKeys.length === 2 && clinicalKeys.length === 1) {
       const [demoA, demoB] = demoKeys;
       const metric = clinicalKeys[0];
-      const rowLabels = getDemographicOrder(demoA);
-      const columnLabels = getDemographicOrder(demoB);
+      const rowLabels = getSelectedBands(demoA, activeSubgroups);
+      const columnLabels = getSelectedBands(demoB, activeSubgroups);
       const cells: HeatmapCell[] = [];
 
       rowLabels.forEach((rowLabel) => {
@@ -433,6 +491,7 @@ export default function AnalyticsExplorerScreen() {
         type: 'heatmap',
         title: `${getClinicalTitle(metric)} by ${getDemographicTitle(demoA)} and ${getDemographicTitle(demoB)}`,
         excluded: excluded.count,
+        filteredOut: filteredOut.count,
         rowLabels: rowLabels.filter((label) => cells.some((cell) => cell.rowLabel === label)),
         columnLabels: columnLabels.filter((label) => cells.some((cell) => cell.columnLabel === label)),
         cells,
@@ -440,7 +499,7 @@ export default function AnalyticsExplorerScreen() {
     }
 
     const demoKey = demoKeys[0];
-    const bandOrder = getDemographicOrder(demoKey);
+  const bandOrder = getSelectedBands(demoKey, activeSubgroups);
     const grouped = bandOrder.map((band) => {
       const members = filtered.filter((row) => getBandValue(demoKey, row) === band);
       if (members.length === 0) return null;
@@ -475,6 +534,7 @@ export default function AnalyticsExplorerScreen() {
         type: 'horizontal',
         title: `${getClinicalTitle(clinicalKeys[0])} by ${getDemographicTitle(demoKey)}`,
         excluded: excluded.count,
+        filteredOut: filteredOut.count,
         rows: grouped as SingleMetricRow[],
         chartWidth,
         color: CLINICAL_COLORS[clinicalKeys[0]],
@@ -485,17 +545,46 @@ export default function AnalyticsExplorerScreen() {
       type: 'grouped',
       title: `${clinicalKeys.map((metric) => getClinicalTitle(metric)).join(' vs ')} by ${getDemographicTitle(demoKey)}`,
       excluded: excluded.count,
+      filteredOut: filteredOut.count,
       groups: grouped as GroupedMetricRow[],
       metrics: clinicalKeys,
       chartWidth,
     };
   }, [generatedChart, enrichedPatients, width]);
 
+  const analysisExplanation = useMemo(() => getAnalysisExplanation(analysis), [analysis]);
+
   function toggleDemographic(key: DemographicKey) {
     setSelectedDemographics((prev) => {
-      if (prev.includes(key)) return prev.filter((item) => item !== key);
+      if (prev.includes(key)) {
+        setSubgroupFilters((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+        return prev.filter((item) => item !== key);
+      }
       if (prev.length >= 2) return prev;
+      setSubgroupFilters((current) => ({
+        ...current,
+        [key]: getDemographicOrder(key),
+      }));
       return [...prev, key];
+    });
+  }
+
+  function toggleSubgroup(demographic: DemographicKey, subgroup: string) {
+    setSubgroupFilters((current) => {
+      const selected = getSelectedBands(demographic, current);
+      const exists = selected.includes(subgroup);
+      const nextValues = exists
+        ? selected.filter((item) => item !== subgroup)
+        : [...selected, subgroup];
+
+      return {
+        ...current,
+        [demographic]: getDemographicOrder(demographic).filter((band) => nextValues.includes(band)),
+      };
     });
   }
 
@@ -528,6 +617,31 @@ export default function AnalyticsExplorerScreen() {
                 disabled={!selectedDemographics.includes(option.key) && selectedDemographics.length >= 2}
               />
             ))}
+
+            {selectedDemographics.length > 0 && (
+              <View style={styles.subgroupSection}>
+                <Text style={styles.subgroupTitle}>Subdivide selections</Text>
+                <Text style={styles.subgroupHint}>Narrow each demographic to the exact subgroup values you want to include.</Text>
+                {selectedDemographics.map((key) => (
+                  <View key={key} style={styles.subgroupCard}>
+                    <Text style={styles.subgroupLabel}>{getDemographicTitle(key)}</Text>
+                    <View style={styles.subgroupChipRow}>
+                      {getDemographicOrder(key).map((band) => {
+                        const selected = getSelectedBands(key, subgroupFilters).includes(band);
+                        return (
+                          <SelectionChip
+                            key={`${key}-${band}`}
+                            label={band}
+                            selected={selected}
+                            onPress={() => toggleSubgroup(key, band)}
+                          />
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
 
           <View style={styles.selectorColumn}>
@@ -547,6 +661,9 @@ export default function AnalyticsExplorerScreen() {
 
         <View style={styles.selectionRuleCard}>
           <Text style={styles.selectionRuleText}>Minimum 1 demographic and 1 clinical selection. Maximum 2 demographics and 3 clinical metrics.</Text>
+          {!allDemographicsHaveSubgroups && selectedDemographics.length > 0 && (
+            <Text style={styles.selectionWarning}>Choose at least one subgroup for every selected demographic.</Text>
+          )}
           {!combinationSupported && minimumMet && (
             <Text style={styles.selectionWarning}>Supported combinations: 1 demographic + 1-3 clinical metrics, or 2 demographics + 1 clinical metric.</Text>
           )}
@@ -555,7 +672,14 @@ export default function AnalyticsExplorerScreen() {
         {minimumMet && (
           <TouchableOpacity
             style={[styles.generateButton, !combinationSupported && styles.generateButtonDisabled]}
-            onPress={() => setGeneratedChart({ demographics: selectedDemographics, clinical: selectedClinical })}
+            onPress={() => setGeneratedChart({
+              demographics: selectedDemographics,
+              clinical: selectedClinical,
+              subgroupFilters: selectedDemographics.reduce<Partial<Record<DemographicKey, string[]>>>((acc, key) => {
+                acc[key] = getSelectedBands(key, subgroupFilters);
+                return acc;
+              }, {}),
+            })}
             disabled={!combinationSupported}
             activeOpacity={0.85}
           >
@@ -574,7 +698,10 @@ export default function AnalyticsExplorerScreen() {
           {analysis && (
             <>
               <Text style={styles.chartTitle}>{analysis.title}</Text>
-              <Text style={styles.chartNote}>{analysis.excluded} patients excluded due to missing data</Text>
+              <Text style={styles.chartNote}>
+                {analysis.excluded} patients excluded due to missing data{analysis.filteredOut > 0 ? ` · ${analysis.filteredOut} outside selected subgroups` : ''}
+              </Text>
+              {analysisExplanation && <Text style={styles.chartExplanation}>{analysisExplanation}</Text>}
 
               {analysis.type === 'horizontal' && <HorizontalBarChart rows={analysis.rows} width={analysis.chartWidth} color={analysis.color} />}
               {analysis.type === 'grouped' && <GroupedBarChart groups={analysis.groups} metrics={analysis.metrics} width={analysis.chartWidth} />}
@@ -668,6 +795,39 @@ const styles = StyleSheet.create({
   selectorChipTextSelected: {
     color: '#1E40AF',
   },
+  subgroupSection: {
+    marginTop: 6,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  subgroupTitle: {
+    fontSize: 12,
+    color: Colors.text,
+    marginBottom: 4,
+    ...fonts.semibold,
+  },
+  subgroupHint: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginBottom: 12,
+    lineHeight: 18,
+    ...fonts.regular,
+  },
+  subgroupCard: {
+    marginBottom: 12,
+  },
+  subgroupLabel: {
+    fontSize: 12,
+    color: Colors.text,
+    marginBottom: 8,
+    ...fonts.medium,
+  },
+  subgroupChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   selectionRuleCard: {
     backgroundColor: Colors.white,
     borderWidth: 1,
@@ -723,6 +883,13 @@ const styles = StyleSheet.create({
   chartNote: {
     fontSize: 12,
     color: Colors.textMuted,
+    marginBottom: 16,
+    ...fonts.regular,
+  },
+  chartExplanation: {
+    fontSize: 13,
+    color: Colors.text,
+    lineHeight: 20,
     marginBottom: 16,
     ...fonts.regular,
   },

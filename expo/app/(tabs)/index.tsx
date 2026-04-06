@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Image, useWindowDimensions, ActivityIndicator, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, ChevronDown, ArrowRight, LogOut, EyeOff, Database } from 'lucide-react-native';
+import { Search, ChevronDown, ArrowRight, LogOut, EyeOff, Database, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useRPI } from '@/contexts/RPIContext';
@@ -127,7 +127,8 @@ export default function DashboardScreen() {
     filterGender, setFilterGender,
     toggleSort, sortCol, sortDir,
     getDisplayName,
-    runOptimization, optimizing, optProgress, optResults, showOptModal, setShowOptModal, enforceMin10, setEnforceMin10, applyOptimalWeights,
+    runOptimization, optimizing, optProgress, optResults, showOptModal, setShowOptModal, applyOptimalWeights,
+    minDomainWeight, setMinDomainWeight,
     W, tga, tar,
     isDataLoading, isDbConnected,
   } = useRPI();
@@ -299,20 +300,28 @@ export default function DashboardScreen() {
 
       <View style={[styles.footerMenu, { paddingBottom: insets.bottom + 10 }]}>
         <View style={styles.footerTop}>
-          <View style={styles.checkboxRow}>
-            <Switch
-              value={enforceMin10}
-              onValueChange={setEnforceMin10}
-              trackColor={{ false: Colors.border, true: Colors.bluePale }}
-              thumbColor={enforceMin10 ? Colors.blue : Colors.textMuted}
-              style={styles.checkbox}
+          <View style={styles.inputRow}>
+            <Text style={styles.footerLabel}>Minimum % per domain:</Text>
+            <TextInput
+              style={styles.footerInput}
+              keyboardType="numeric"
+              value={String(minDomainWeight)}
+              onChangeText={(text) => {
+                const num = parseInt(text, 10);
+                if (text.trim() === '') {
+                  setMinDomainWeight(1);
+                } else if (!Number.isNaN(num)) {
+                  setMinDomainWeight(Math.max(1, Math.min(20, num)));
+                }
+              }}
+              maxLength={2}
             />
-            <Text style={styles.checkboxLabel}>Enforce minimum 10% per domain (clinically balanced)</Text>
           </View>
+          <Text style={styles.footerHelpText}>Optimization will enforce the configured minimum domain weight.</Text>
         </View>
         <TouchableOpacity
           style={[styles.footerButton, optimizing && styles.footerButtonDisabled]}
-          onPress={() => runOptimization(enforceMin10)}
+          onPress={() => runOptimization()}
           disabled={optimizing}
           activeOpacity={0.8}
         >
@@ -342,6 +351,9 @@ function OptimizationModal({ visible, onClose, results, currentWeights, currentT
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+            <X size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
           <Text style={styles.modalTitle}>Optimization Results</Text>
           <Text style={styles.modalSubtitle}>
             Tested {results.combinations.toLocaleString()} combinations
@@ -883,5 +895,167 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     width: 16,
     textAlign: 'center',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 8,
+  },
+  footerLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    flex: 1,
+  },
+  footerInput: {
+    width: 56,
+    height: 36,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    color: Colors.textDark,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  footerHelpText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 760,
+    maxHeight: '90%',
+    backgroundColor: Colors.white,
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: Colors.text,
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginBottom: 14,
+  },
+  modalScroll: {
+    marginBottom: 18,
+  },
+  statsSection: {
+    marginBottom: 18,
+  },
+  weightsSection: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  statsComparison: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  weightsComparison: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  statsColumn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 12,
+    padding: 12,
+  },
+  weightsColumn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 12,
+    padding: 12,
+  },
+  columnTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    marginBottom: 10,
+  },
+  statItem: {
+    marginBottom: 10,
+  },
+  statValueChanged: {
+    color: Colors.blue,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  weightLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  weightValue: {
+    fontSize: 12,
+    color: Colors.text,
+    fontWeight: '700',
+  },
+  weightValueChanged: {
+    color: Colors.blue,
+  },
+  thresholdRowModal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  cancelBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.surfaceMid,
+    borderRadius: 12,
+  },
+  cancelBtnText: {
+    color: Colors.textMuted,
+    fontWeight: '700',
+  },
+  applyBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.blue,
+    borderRadius: 12,
+  },
+  applyBtnText: {
+    color: Colors.white,
+    fontWeight: '800',
   },
 });

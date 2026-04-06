@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { parseAllPatients } from '@/data/patients';
@@ -27,6 +27,7 @@ import {
   SortDirection,
 } from '@/data/types';
 import { useAuth } from '@/contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '@/lib/trpc';
 
 type OptimizationResult = {
@@ -257,8 +258,34 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [optProgress, setOptProgress] = useState<string>('');
   const [optResults, setOptResults] = useState<OptimizationResult | null>(null);
   const [showOptModal, setShowOptModal] = useState<boolean>(false);
-  const [enforceMin10, setEnforceMin10] = useState<boolean>(false);
+  const [minDomainWeight, setMinDomainWeight] = useState<number>(10);
   const [physioNotPerformedMap, setPhysioNotPerformedMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const loadPreference = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('MIN_DOMAIN_WEIGHT');
+        const value = stored ? parseInt(stored, 10) : NaN;
+        if (!Number.isNaN(value) && value >= 1 && value <= 20) {
+          setMinDomainWeight(value);
+        }
+      } catch (err) {
+        console.log('[RPIContext] Failed to load min domain weight', err);
+      }
+    };
+    void loadPreference();
+  }, []);
+
+  useEffect(() => {
+    const savePreference = async () => {
+      try {
+        await AsyncStorage.setItem('MIN_DOMAIN_WEIGHT', String(minDomainWeight));
+      } catch (err) {
+        console.log('[RPIContext] Failed to save min domain weight', err);
+      }
+    };
+    void savePreference();
+  }, [minDomainWeight]);
 
   const results = useMemo<PatientResult[]>(
     () => getResults(patients, W, SW, tga, tar, lifeOverrides, manualOverrides, physioNotPerformedMap),
@@ -300,17 +327,18 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   }, [W]);
 
   const setPhysioNotPerformed = useCallback((name: string, value: boolean) => {
+    console.log('[RPIContext] physio not performed toggle', name, value);
     setPhysioNotPerformedMap((prev) => ({ ...prev, [name]: value }));
   }, []);
 
   const isPhysioNotPerformed = useCallback((name: string) => !!physioNotPerformedMap[name], [physioNotPerformedMap]);
 
-  const runOptimization = useCallback(async (enforceMin10: boolean = false) => {
+  const runOptimization = useCallback(async (overrideMinWeight?: number) => {
     setOptimizing(true);
     setOptProgress('Starting optimization...');
 
     const classifiedPatients = patients.filter((p) => p.sr !== 'U');
-    const minWeight = enforceMin10 ? 10 : 5;
+    const minWeight = Math.max(1, Math.min(20, Math.round(overrideMinWeight ?? minDomainWeight)));
     const maxWeight = 50;
 
     let bestResult: OptimizationResult = {
@@ -389,7 +417,7 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     setOptResults(bestResult);
     setOptimizing(false);
     setShowOptModal(true);
-  }, [patients, lifeOverrides, manualOverrides]);
+  }, [patients, lifeOverrides, manualOverrides, minDomainWeight]);
 
   const applyOptimalWeights = useCallback(() => {
     if (!optResults) return;
@@ -802,8 +830,8 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     showOptModal,
     setShowOptModal,
     runOptimization,
-    enforceMin10,
-    setEnforceMin10,
+    minDomainWeight,
+    setMinDomainWeight,
     setPhysioNotPerformed,
     isPhysioNotPerformed,
     applyOptimalWeights,
@@ -816,6 +844,6 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     selectedPatient, sortCol, sortDir, toggleSort,
     searchQuery, filterRisk, filterTier, filterSite, filterGender,
     getDisplayName, anonymize, isDataLoading, isDbConnected,
-    optimizing, optProgress, optResults, showOptModal, setShowOptModal, runOptimization, enforceMin10, setEnforceMin10, setPhysioNotPerformed, isPhysioNotPerformed, applyOptimalWeights,
+    optimizing, optProgress, optResults, showOptModal, setShowOptModal, runOptimization, minDomainWeight, setMinDomainWeight, setPhysioNotPerformed, isPhysioNotPerformed, applyOptimalWeights,
   ]);
 });

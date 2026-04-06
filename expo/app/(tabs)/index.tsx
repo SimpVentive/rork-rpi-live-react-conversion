@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Image, useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch, Image, useWindowDimensions, ActivityIndicator, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, ChevronDown, ArrowRight, LogOut, EyeOff, Database } from 'lucide-react-native';
@@ -12,7 +12,15 @@ import { WeightControls } from '@/components/WeightControls';
 import Colors from '@/constants/colors';
 import { colors, fonts } from '@/constants/theme';
 import { tierColor, riskColor, riskLabel, getMatchType } from '@/data/scoring';
-import { PatientResult, SortColumn } from '@/data/types';
+import { PatientResult, SortColumn, GroupWeights } from '@/data/types';
+
+type OptimizationResult = {
+  weights: GroupWeights;
+  tga: number;
+  tar: number;
+  stats: { acc: number; sens: number; prec: number };
+  combinations: number;
+};
 
 function StatCard({ label, value, sub, color }: { label: string; value: string | number; sub: string; color?: string }) {
   return (
@@ -106,6 +114,8 @@ export default function DashboardScreen() {
     filterGender, setFilterGender,
     toggleSort, sortCol, sortDir,
     getDisplayName,
+    runOptimization, optimizing, optProgress, optResults, showOptModal, setShowOptModal, enforceMin10, setEnforceMin10, applyOptimalWeights,
+    W, tga, tar,
     isDataLoading, isDbConnected,
   } = useRPI();
   const { siteLabel, anonymize, toggleAnonymize, logout } = useAuth();
@@ -262,9 +272,172 @@ export default function DashboardScreen() {
           ))}
         </View>
       </ScrollView>
+
+      <OptimizationModal
+        visible={showOptModal}
+        onClose={() => setShowOptModal(false)}
+        results={optResults}
+        currentWeights={W}
+        currentTga={tga}
+        currentTar={tar}
+        currentStats={stats}
+        onApply={applyOptimalWeights}
+      />
+
+      <View style={[styles.footerMenu, { paddingBottom: insets.bottom + 10 }]}>
+        <View style={styles.footerTop}>
+          <View style={styles.checkboxRow}>
+            <Switch
+              value={enforceMin10}
+              onValueChange={setEnforceMin10}
+              trackColor={{ false: Colors.border, true: Colors.bluePale }}
+              thumbColor={enforceMin10 ? Colors.blue : Colors.textMuted}
+              style={styles.checkbox}
+            />
+            <Text style={styles.checkboxLabel}>Enforce minimum 10% per domain (clinically balanced)</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.footerButton, optimizing && styles.footerButtonDisabled]}
+          onPress={() => runOptimization(enforceMin10)}
+          disabled={optimizing}
+          activeOpacity={0.8}
+        >
+          {optimizing && <ActivityIndicator size="small" color="#fbbf24" style={styles.footerSpinner} />}
+          <Text style={[styles.footerButtonText, optimizing && styles.footerButtonTextDisabled]}>
+            {optimizing ? optProgress || 'Optimising...' : 'Find Optima'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
+
+// function OptimizationModal({ visible, onClose, results, currentWeights, currentTga, currentTar, currentStats, onApply }: {
+//   visible: boolean;
+//   onClose: () => void;
+//   results: OptimizationResult | null;
+//   currentWeights: GroupWeights;
+//   currentTga: number;
+//   currentTar: number;
+//   currentStats: { acc: number; sens: number; prec: number };
+//   onApply: () => void;
+// }) {
+//   if (!results) return null;
+
+//   return (
+//     <Modal visible={visible} transparent animationType="fade">
+//       <View style={styles.modalOverlay}>
+//         <View style={styles.modalContent}>
+//           <Text style={styles.modalTitle}>Optimization Results</Text>
+          
+//           <Text style={styles.modalSubtitle}>
+//             Tested {results.combinations.toLocaleString()} combinations
+//           </Text>
+
+//           <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+//             <View style={styles.statsSection}>
+//               <Text style={styles.sectionTitle}>Performance Metrics</Text>
+//               <View style={styles.statsComparison}>
+//                 <View style={styles.statsColumn}>
+//                   <Text style={styles.columnTitle}>Before</Text>
+//                   <View style={styles.statItem}>
+//                     <Text style={styles.statValue}>{currentStats.acc}%</Text>
+//                     <Text style={styles.statLabel}>Accuracy</Text>
+//                   </View>
+//                   <View style={styles.statItem}>
+//                     <Text style={styles.statValue}>{currentStats.prec}%</Text>
+//                     <Text style={styles.statLabel}>Precision</Text>
+//                   </View>
+//                   <View style={styles.statItem}>
+//                     <Text style={styles.statValue}>{currentStats.sens}%</Text>
+//                     <Text style={styles.statLabel}>Sensitivity</Text>
+//                   </View>
+//                 </View>
+//                 <View style={styles.statsColumn}>
+//                   <Text style={styles.columnTitle}>After</Text>
+//                   <View style={styles.statItem}>
+//                     <Text style={[styles.statValue, results.stats.acc !== currentStats.acc && styles.statValueChanged]}>
+//                       {results.stats.acc}%
+//                     </Text>
+//                     <Text style={styles.statLabel}>Accuracy</Text>
+//                   </View>
+//                   <View style={styles.statItem}>
+//                     <Text style={[styles.statValue, results.stats.prec !== currentStats.prec && styles.statValueChanged]}>
+//                       {results.stats.prec}%
+//                     </Text>
+//                     <Text style={styles.statLabel}>Precision</Text>
+//                   </View>
+//                   <View style={styles.statItem}>
+//                     <Text style={[styles.statValue, results.stats.sens !== currentStats.sens && styles.statValueChanged]}>
+//                       {results.stats.sens}%
+//                     </Text>
+//                     <Text style={styles.statLabel}>Sensitivity</Text>
+//                   </View>
+//                 </View>
+//               </View>
+//             </View>
+
+//             <View style={styles.weightsSection}>
+//               <Text style={styles.sectionTitle}>Weights & Thresholds</Text>
+//               <View style={styles.weightsComparison}>
+//                 <View style={styles.weightsColumn}>
+//                   <Text style={styles.columnTitle}>Before</Text>
+//                   {Object.entries(currentWeights).map(([key, value]) => (
+//                     <View key={key} style={styles.weightRow}>
+//                       <Text style={styles.weightLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+//                       <Text style={styles.weightValue}>{value}%</Text>
+//                     </View>
+//                   ))}
+//                   <View style={styles.thresholdRowModal}>
+//                     <Text style={styles.weightLabel}>TGA</Text>
+//                     <Text style={styles.weightValue}>{currentTga}</Text>
+//                   </View>
+//                   <View style={styles.thresholdRowModal}>
+//                     <Text style={styles.weightLabel}>TAR</Text>
+//                     <Text style={styles.weightValue}>{currentTar}</Text>
+//                   </View>
+//                 </View>
+//                 <View style={styles.weightsColumn}>
+//                   <Text style={styles.columnTitle}>After</Text>
+//                   {Object.entries(results.weights).map(([key, value]) => (
+//                     <View key={key} style={styles.weightRow}>
+//                       <Text style={styles.weightLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+//                       <Text style={[styles.weightValue, value !== currentWeights[key] && styles.weightValueChanged]}>
+//                         {value}%
+//                       </Text>
+//                     </View>
+//                   ))}
+//                   <View style={styles.thresholdRowModal}>
+//                     <Text style={styles.weightLabel}>TGA</Text>
+//                     <Text style={[styles.weightValue, results.tga !== currentTga && styles.weightValueChanged]}>
+//                       {results.tga}
+//                     </Text>
+//                   </View>
+//                   <View style={styles.thresholdRowModal}>
+//                     <Text style={styles.weightLabel}>TAR</Text>
+//                     <Text style={[styles.weightValue, results.tar !== currentTar && styles.weightValueChanged]}>
+//                       {results.tar}
+//                     </Text>
+//                   </View>
+//                 </View>
+//               </View>
+//             </View>
+//           </ScrollView>
+
+//           <View style={styles.modalButtons}>
+//             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+//               <Text style={styles.cancelBtnText}>Cancel</Text>
+//             </TouchableOpacity>
+//             <TouchableOpacity style={styles.applyBtn} onPress={onApply} activeOpacity={0.7}>
+//               <Text style={styles.applyBtnText}>Apply Optimal Weights</Text>
+//             </TouchableOpacity>
+//           </View>
+//         </View>
+//       </View>
+//     </Modal>
+//   );
+// }
 
 const styles = StyleSheet.create({
   screen: {
@@ -518,6 +691,53 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
+  footerMenu: {
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  footerTop: {
+    marginBottom: 12,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkbox: {
+    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
+  },
+  checkboxLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    flex: 1,
+  },
+  footerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#92400e',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  footerButtonDisabled: {
+    backgroundColor: '#475569',
+  },
+  footerButtonText: {
+    color: '#fbbf24',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  footerButtonTextDisabled: {
+    color: '#cbd5e1',
+  },
+  footerSpinner: {
+    marginRight: 8,
+  },
+  tableHeader: {
   tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -602,9 +822,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
   },
   rpiBar: {
     height: 6,

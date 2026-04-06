@@ -7,6 +7,13 @@ import {
   DEFAULT_SUB_WEIGHTS,
   getResults,
   computeStats,
+  sSTarT,
+  sROM,
+  sPhysio,
+  sAnthropo,
+  sComor,
+  sLife,
+  getMatchType,
 } from '@/data/scoring';
 import {
   GroupWeights,
@@ -19,12 +26,16 @@ import {
   SortColumn,
   SortDirection,
 } from '@/data/types';
-import {
-  sSTarT, sROM, sPhysio, sAnthropo, sComor, sLife,
-  getMatchType,
-} from '@/data/scoring';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/trpc';
+
+type OptimizationResult = {
+  weights: GroupWeights;
+  tga: number;
+  tar: number;
+  stats: { acc: number; sens: number; prec: number };
+  combinations: number;
+};
 
 export const [RPIProvider, useRPI] = createContextHook(() => {
   const { currentSite, isAdmin, anonymize } = useAuth();
@@ -242,6 +253,11 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [filterTier, setFilterTier] = useState<string>('');
   const [filterSite, setFilterSite] = useState<string>('');
   const [filterGender, setFilterGender] = useState<string>('');
+  const [optimizing, setOptimizing] = useState<boolean>(false);
+  const [optProgress, setOptProgress] = useState<string>('');
+  const [optResults, setOptResults] = useState<OptimizationResult | null>(null);
+  const [showOptModal, setShowOptModal] = useState<boolean>(false);
+  const [enforceMin10, setEnforceMin10] = useState<boolean>(false);
 
   const results = useMemo<PatientResult[]>(
     () => getResults(patients, W, SW, tga, tar, lifeOverrides, manualOverrides),
@@ -281,6 +297,100 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   const weightTotal = useMemo(() => {
     return W.start + W.rom + W.physio + W.anthro + W.comor + W.life;
   }, [W]);
+
+  const runOptimization = useCallback(async (enforceMin10: boolean = false) => {
+    setOptimizing(true);
+    setOptProgress('Starting optimization...');
+
+    const classifiedPatients = patients.filter((p) => p.sr !== 'U');
+    const minWeight = enforceMin10 ? 10 : 5;
+    const maxWeight = 50;
+
+    let bestResult: OptimizationResult = {
+      weights: { start: 35, rom: 25, physio: 15, anthro: 12, comor: 8, life: 5 },
+      tga: 35,
+      tar: 55,
+      stats: { acc: 0, sens: 0, prec: 0 },
+      combinations: 0,
+    };
+
+    let tested = 0;
+    const totalIterations = 10000;
+
+    for (let i = 0; i < totalIterations; i++) {
+      // Generate random weights within constraints
+      let weights: number[] = [];
+      for (let j = 0; j < 6; j++) {
+        weights.push(Math.floor(Math.random() * (maxWeight - minWeight + 1)) + minWeight);
+      }
+      // Normalize to sum to 100
+      const sum = weights.reduce((a, b) => a + b, 0);
+      weights = weights.map(w => Math.round((w / sum) * 100));
+      // Adjust to exactly 100
+      let total = weights.reduce((a, b) => a + b, 0);
+      while (total !== 100) {
+        if (total > 100) {
+          const idx = Math.floor(Math.random() * 6);
+          if (weights[idx] > minWeight) {
+            weights[idx]--;
+            total--;
+          }
+        } else {
+          const idx = Math.floor(Math.random() * 6);
+          if (weights[idx] < maxWeight) {
+            weights[idx]++;
+            total++;
+          }
+        }
+      }
+
+      const testWeights: GroupWeights = {
+        start: weights[0],
+        rom: weights[1],
+        physio: weights[2],
+        anthro: weights[3],
+        comor: weights[4],
+        life: weights[5],
+      };
+
+      // Generate TGA and TAR within ranges, TGA < TAR
+      const testTga = Math.floor(Math.random() * (45 - 25 + 1)) + 25;
+      let testTar = Math.floor(Math.random() * (70 - 46 + 1)) + 46;
+      if (testTar <= testTga) testTar = testTga + 1;
+
+      const results = getResults(classifiedPatients, testWeights, DEFAULT_SUB_WEIGHTS, testTga, testTar, lifeOverrides, manualOverrides);
+      const stats = computeStats(results);
+
+      tested++;
+      if (tested % 500 === 0) {
+        setOptProgress(`Testing... ${tested}/${totalIterations} combinations`);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      if (stats.acc > bestResult.stats.acc ||
+          (stats.acc === bestResult.stats.acc && stats.sens > bestResult.stats.sens)) {
+        bestResult = {
+          weights: { ...testWeights },
+          tga: testTga,
+          tar: testTar,
+          stats: { acc: stats.acc, sens: stats.sens, prec: stats.prec },
+          combinations: tested,
+        };
+      }
+    }
+
+    setOptResults(bestResult);
+    setOptimizing(false);
+    setShowOptModal(true);
+  }, [patients, lifeOverrides, manualOverrides]);
+
+  const applyOptimalWeights = useCallback(() => {
+    if (!optResults) return;
+    setW(optResults.weights);
+    setTga(optResults.tga);
+    setTar(optResults.tar);
+    setShowOptModal(false);
+  }, [optResults]);
 
   const saveManualMutation = useMutation({
     mutationFn: async (params: { name: string; risk: 'H' | 'M' | 'L' | 'U' }) => {
@@ -679,6 +789,15 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     anonymize,
     isDataLoading,
     isDbConnected,
+    optimizing,
+    optProgress,
+    optResults,
+    showOptModal,
+    setShowOptModal,
+    runOptimization,
+    enforceMin10,
+    setEnforceMin10,
+    applyOptimalWeights,
   }), [
     patients, W, updateWeight, weightTotal, SW, updateSubWeight, tga, tar,
     lifeOverrides, saveLifeOverride, getLifeOverride,
@@ -688,5 +807,6 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     selectedPatient, sortCol, sortDir, toggleSort,
     searchQuery, filterRisk, filterTier, filterSite, filterGender,
     getDisplayName, anonymize, isDataLoading, isDbConnected,
+    optimizing, optProgress, optResults, showOptModal, setShowOptModal, runOptimization, enforceMin10, setEnforceMin10, applyOptimalWeights,
   ]);
 });

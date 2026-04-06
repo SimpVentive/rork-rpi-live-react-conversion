@@ -107,6 +107,7 @@ export function calcRPI(
     const remainingComor = W.comor;
     const remainingLife = W.life;
     const remainingTotal = remainingStart + remainingRom + remainingAnthro + remainingComor + remainingLife;
+    console.log('[scoring] calcRPI noPhysio', p.name, { remainingStart, remainingRom, remainingAnthro, remainingComor, remainingLife, remainingTotal });
     if (remainingTotal === 0) return 0;
     const scale = 100 / remainingTotal;
     const scaledStart = remainingStart * scale;

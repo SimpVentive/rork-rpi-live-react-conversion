@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch,
 } from 'react-native';
@@ -88,6 +88,12 @@ export default function PatientDetailScreen() {
     () => (patient ? isPhysioNotPerformed(patient.name) : false),
     [patient, isPhysioNotPerformed],
   );
+
+  useEffect(() => {
+    if (patient) {
+      console.log('[PatientDetail] physioNotPerformed', patient.name, physioNotPerformed, patient.physioNotPerformed);
+    }
+  }, [patient, physioNotPerformed]);
 
   const domains = useMemo(() => {
     if (!patient) return null;

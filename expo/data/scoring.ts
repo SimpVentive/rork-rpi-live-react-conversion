@@ -108,7 +108,7 @@ export function calcRPI(
     if (remainingTotal === 0) return 0;
     const wtd = W.start * sSTarT(p) + W.rom * sROM(p, SW) +
       W.anthro * sAnthropo(p, SW) + W.comor * sComor(p, SW) + W.life * sLife(p, SW, lifeOverride);
-    return Math.round(wtd / remainingTotal * 100);
+    return Math.round(wtd / remainingTotal);
   }
 
   const tw = W.start + W.rom + W.physio + W.anthro + W.comor + W.life;

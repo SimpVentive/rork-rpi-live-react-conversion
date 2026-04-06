@@ -193,7 +193,6 @@ export default function PatientDetailScreen() {
           <View style={styles.riskButtons}>
             {(['H', 'M', 'L', 'U'] as const).map((risk) => {
               const isActive = patient.sr === risk;
-              const _isOverridden = manualOverrides[patient.name] !== undefined;
               const btnColor = risk === 'H' ? '#dc2626' : risk === 'M' ? '#b45309' : risk === 'L' ? '#15803d' : '#64748b';
               return (
                 <TouchableOpacity
@@ -299,7 +298,7 @@ export default function PatientDetailScreen() {
                   RPI = ({W.start}x{domains.start} + {W.rom}x{domains.rom}
                   {physioNotPerformed ? '' : ` + ${W.physio}x${domains.physio}`}
                   + {W.anthro}x{domains.anthro} + {W.comor}x{domains.comor} + {W.life}x{domains.life})
-                  / {physioNotPerformed ? 100 : totalW}
+                  / {physioNotPerformed ? W.start + W.rom + W.anthro + W.comor + W.life : totalW}
                 </Text>
                 <Text style={[styles.formulaResult, { color: tc }]}>= {patient.rpi}</Text>
               </>

@@ -43,8 +43,49 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   const queryClient = useQueryClient();
 
   const siteParam = isAdmin ? 'ALL' : (currentSite || 'ALL');
+  const scenariosStorageKey = `LOCAL_SCENARIOS:${siteParam}`;
 
-const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const loadLocalScenarios = useCallback(async (): Promise<SavedScenario[]> => {
+    try {
+      const raw = await AsyncStorage.getItem(scenariosStorageKey);
+      if (!raw) return [];
+      return JSON.parse(raw) as SavedScenario[];
+    } catch (err) {
+      console.log('[RPIContext] Failed to load local scenarios:', err);
+      return [];
+    }
+  }, [scenariosStorageKey]);
+
+  const saveLocalScenarios = useCallback(async (items: SavedScenario[]) => {
+    try {
+      await AsyncStorage.setItem(scenariosStorageKey, JSON.stringify(items));
+    } catch (err) {
+      console.log('[RPIContext] Failed to save local scenarios:', err);
+    }
+  }, [scenariosStorageKey]);
+
+  const sortScenarios = useCallback((items: SavedScenario[]) => {
+    return [...items].sort((a, b) => {
+      const aTs = new Date(a.ts).getTime();
+      const bTs = new Date(b.ts).getTime();
+      if (!Number.isNaN(aTs) && !Number.isNaN(bTs) && aTs !== bTs) {
+        return bTs - aTs;
+      }
+      return Number(b.id) - Number(a.id);
+    });
+  }, []);
+
+  const mergeScenarios = useCallback((remote: SavedScenario[], local: SavedScenario[]) => {
+    const merged = [...remote];
+    const existing = new Set(remote.map((item) => `${item.ts}:${item.total}:${item.acc}`));
+    local.forEach((item) => {
+      const key = `${item.ts}:${item.total}:${item.acc}`;
+      if (!existing.has(key)) merged.push(item);
+    });
+    return sortScenarios(merged);
+  }, [sortScenarios]);
+
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   const patientsQuery = useQuery({
     queryKey: ['patients', siteParam],
@@ -190,7 +231,7 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
         console.log('[RPIContext] Fetching scenarios from DB');
         const results = await api.scenarios.list.query({ site: siteParam });
         console.log('[RPIContext] Got', results.length, 'scenarios');
-        return results.map((s: Record<string, unknown>) => ({
+        const remote = results.map((s: Record<string, unknown>) => ({
           id: (s.id as string) || String(Date.now()),
           ts: s.ts as string,
           W: (s.weights || {}) as GroupWeights,
@@ -206,9 +247,11 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
           acc: (s.acc as number) || 0,
           patients: (s.patients || []) as PatientSnapshot[],
         })) as SavedScenario[];
+        const local = await loadLocalScenarios();
+        return mergeScenarios(remote, local);
       } catch (err) {
         console.log('[RPIContext] Failed to fetch scenarios:', err);
-        return [] as SavedScenario[];
+        return loadLocalScenarios();
       }
     },
     staleTime: 10000,
@@ -559,7 +602,37 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
       acc: s.acc,
       patients: patientSnapshots,
     };
-    saveScenarioMutation.mutate(scenario);
+    const localScenario = {
+      id: Date.now(),
+      ts,
+      W: { ...W },
+      SW: JSON.parse(JSON.stringify(SW)),
+      TGA: tga,
+      TAR: tar,
+      ...s,
+      patients: patientSnapshots,
+    } as SavedScenario;
+
+    queryClient.setQueryData<SavedScenario[]>(['scenarios', siteParam], (prev = []) =>
+      mergeScenarios([localScenario], prev),
+    );
+
+    saveScenarioMutation.mutate(scenario, {
+      onSuccess: async () => {
+        const local = await loadLocalScenarios();
+        const filtered = local.filter((item) => item.id !== localScenario.id);
+        await saveLocalScenarios(filtered);
+        void queryClient.invalidateQueries({ queryKey: ['scenarios', siteParam] });
+      },
+      onError: async (err) => {
+        console.log('[RPIContext] Scenario save failed, keeping local copy:', err);
+        const local = await loadLocalScenarios();
+        await saveLocalScenarios(mergeScenarios([], [localScenario, ...local]));
+        queryClient.setQueryData<SavedScenario[]>(['scenarios', siteParam], (prev = []) =>
+          mergeScenarios([], [localScenario, ...prev]),
+        );
+      },
+    });
 
     const mapRiskToNumeric = (sr: string): number => {
       if (sr === 'H') return 3;
@@ -725,17 +798,8 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
       console.log('[RPIContext] Failed to save patient results/cohort analysis:', err);
     }
 
-    return {
-      id: Date.now(),
-      ts,
-      W: { ...W },
-      SW: JSON.parse(JSON.stringify(SW)),
-      TGA: tga,
-      TAR: tar,
-      ...s,
-      patients: patientSnapshots,
-    } as SavedScenario;
-  }, [results, W, SW, tga, tar, lifeOverrides, saveScenarioMutation, savePatientResultsMutation, saveCohortAnalysisMutation, siteParam]);
+    return localScenario;
+  }, [results, W, SW, tga, tar, lifeOverrides, saveScenarioMutation, savePatientResultsMutation, saveCohortAnalysisMutation, siteParam, queryClient, mergeScenarios, loadLocalScenarios, saveLocalScenarios]);
 
   const deleteScenarioMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -748,8 +812,20 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   });
 
   const deleteScenario = useCallback((id: number | string) => {
-    deleteScenarioMutation.mutate(String(id));
-  }, [deleteScenarioMutation]);
+    queryClient.setQueryData<SavedScenario[]>(['scenarios', siteParam], (prev = []) =>
+      prev.filter((item) => String(item.id) !== String(id)),
+    );
+    void loadLocalScenarios().then((local) => {
+      void saveLocalScenarios(local.filter((item) => String(item.id) !== String(id)));
+    });
+    deleteScenarioMutation.mutate(String(id), {
+      onError: async (err) => {
+        console.log('[RPIContext] Scenario delete failed, removing local copy:', err);
+        const local = await loadLocalScenarios();
+        await saveLocalScenarios(local.filter((item) => String(item.id) !== String(id)));
+      },
+    });
+  }, [deleteScenarioMutation, queryClient, siteParam, loadLocalScenarios, saveLocalScenarios]);
 
   const clearAllScenariosMutation = useMutation({
     mutationFn: async () => {
@@ -762,8 +838,15 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   });
 
   const clearAllScenarios = useCallback(() => {
-    clearAllScenariosMutation.mutate();
-  }, [clearAllScenariosMutation]);
+    queryClient.setQueryData<SavedScenario[]>(['scenarios', siteParam], []);
+    void saveLocalScenarios([]);
+    clearAllScenariosMutation.mutate(undefined, {
+      onError: async (err) => {
+        console.log('[RPIContext] Clear scenarios failed, clearing local copies only:', err);
+        await saveLocalScenarios([]);
+      },
+    });
+  }, [clearAllScenariosMutation, queryClient, siteParam, saveLocalScenarios]);
 
   const toggleSort = useCallback((col: SortColumn) => {
     setSortCol((prev) => {

@@ -422,8 +422,8 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   const applyOptimalWeights = useCallback(() => {
     if (!optResults) return;
     setW(optResults.weights);
-    setTga(optResults.tga);
-    setTar(optResults.tar);
+      setTGA(optResults.tga);
+      setTAR(optResults.tar);
     setShowOptModal(false);
   }, [optResults]);
 

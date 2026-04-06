@@ -2,6 +2,15 @@ import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../create-context";
 import { dbQuery, ensureDB } from "../../db";
 
+const parseJsonField = <T>(value: unknown, fallback: T): T => {
+  if (typeof value !== "string") return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
 export const scenariosRouter = createTRPCRouter({
   list: publicProcedure
     .input(z.object({ site: z.string().optional() }).optional())
@@ -17,7 +26,12 @@ export const scenariosRouter = createTRPCRouter({
       console.log("[scenarios.list] Fetching scenarios, site:", site || "ALL");
       const results = await dbQuery<Record<string, unknown>>(sql, params);
       console.log("[scenarios.list] Found", results.length, "scenarios");
-      return results;
+      return results.map((row) => ({
+        ...row,
+        weights: parseJsonField<Record<string, number>>(row.weights, {}),
+        sub_weights: parseJsonField<Record<string, unknown>>(row.sub_weights, {}),
+        patients: parseJsonField<Array<Record<string, unknown>>>(row.patients, []),
+      }));
     }),
 
   save: publicProcedure

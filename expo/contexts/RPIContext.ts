@@ -500,7 +500,7 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['scenarios'] });
+      void queryClient.invalidateQueries({ queryKey: ['scenarios', siteParam] });
     },
   });
 
@@ -743,7 +743,7 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
       return api.scenarios.delete.mutate({ id });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['scenarios'] });
+      void queryClient.invalidateQueries({ queryKey: ['scenarios', siteParam] });
     },
   });
 
@@ -757,7 +757,7 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
       return api.scenarios.clearAll.mutate({ site: siteParam });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['scenarios'] });
+      void queryClient.invalidateQueries({ queryKey: ['scenarios', siteParam] });
     },
   });
 

@@ -218,9 +218,38 @@ export default function DashboardScreen() {
 
       <WeightControls />
 
+      <View style={styles.optimaToolbar}>
+        <View style={styles.optimaToolbarLeft}>
+          <Text style={styles.optimaToolbarLabel}>Minimum % per domain</Text>
+          <TextInput
+            style={styles.optimaToolbarInput}
+            keyboardType="numeric"
+            value={String(minDomainWeight)}
+            onChangeText={(text) => {
+              const num = parseInt(text, 10);
+              if (text.trim() === '') {
+                setMinDomainWeight(1);
+              } else if (!Number.isNaN(num)) {
+                setMinDomainWeight(Math.max(1, Math.min(20, num)));
+              }
+            }}
+            maxLength={2}
+          />
+        </View>
+        <TouchableOpacity
+          style={[styles.optimaButton, optimizing && styles.optimaButtonDisabled]}
+          onPress={() => runOptimization()}
+          disabled={optimizing}
+          activeOpacity={0.8}
+        >
+          {optimizing && <ActivityIndicator size="small" color={Colors.white} style={styles.optimaSpinner} />}
+          <Text style={styles.optimaButtonText}>{optimizing ? 'Running...' : 'Find Optima'}</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollContent}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
         showsVerticalScrollIndicator={false}
       >
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsRow} contentContainerStyle={styles.statsRowContent}>
@@ -297,40 +326,6 @@ export default function DashboardScreen() {
         currentStats={stats}
         onApply={applyOptimalWeights}
       />
-
-      <View style={[styles.footerMenu, { paddingBottom: insets.bottom + 10 }]}>
-        <View style={styles.footerTop}>
-          <View style={styles.inputRow}>
-            <Text style={styles.footerLabel}>Minimum % per domain:</Text>
-            <TextInput
-              style={styles.footerInput}
-              keyboardType="numeric"
-              value={String(minDomainWeight)}
-              onChangeText={(text) => {
-                const num = parseInt(text, 10);
-                if (text.trim() === '') {
-                  setMinDomainWeight(1);
-                } else if (!Number.isNaN(num)) {
-                  setMinDomainWeight(Math.max(1, Math.min(20, num)));
-                }
-              }}
-              maxLength={2}
-            />
-          </View>
-          <Text style={styles.footerHelpText}>Optimization will enforce the configured minimum domain weight.</Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.footerButton, optimizing && styles.footerButtonDisabled]}
-          onPress={() => runOptimization()}
-          disabled={optimizing}
-          activeOpacity={0.8}
-        >
-          {optimizing && <ActivityIndicator size="small" color="#fbbf24" style={styles.footerSpinner} />}
-          <Text style={[styles.footerButtonText, optimizing && styles.footerButtonTextDisabled]}>
-            {optimizing ? optProgress || 'Optimising...' : 'Find Optima'}
-          </Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
@@ -715,51 +710,66 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
-  footerMenu: {
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  footerTop: {
-    marginBottom: 12,
-  },
-  checkboxRow: {
+  optimaToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    gap: 12,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 12,
   },
-  checkbox: {
-    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
-  },
-  checkboxLabel: {
-    fontSize: 12,
-    color: Colors.textMuted,
+  optimaToolbarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     flex: 1,
   },
-  footerButton: {
+  optimaToolbarLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
+  optimaToolbarInput: {
+    width: 54,
+    height: 34,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    color: Colors.textDark,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  optimaButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    minWidth: 118,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     backgroundColor: '#92400e',
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: 10,
+    borderRadius: 10,
   },
-  footerButtonDisabled: {
-    backgroundColor: '#475569',
+  optimaButtonDisabled: {
+    backgroundColor: '#64748b',
   },
-  footerButtonText: {
-    color: '#fbbf24',
-    fontSize: 14,
+  optimaButtonText: {
+    color: Colors.white,
+    fontSize: 13,
     fontWeight: '800',
   },
-  footerButtonTextDisabled: {
-    color: '#cbd5e1',
-  },
-  footerSpinner: {
-    marginRight: 8,
+  optimaSpinner: {
+    marginRight: 2,
   },
   tableHeader: {
     flexDirection: 'row',
@@ -895,35 +905,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     width: 16,
     textAlign: 'center',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 8,
-  },
-  footerLabel: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    flex: 1,
-  },
-  footerInput: {
-    width: 56,
-    height: 36,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    color: Colors.textDark,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  footerHelpText: {
-    fontSize: 11,
-    color: Colors.textMuted,
-    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,

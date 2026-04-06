@@ -574,6 +574,8 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
 
     const patientSnapshots: PatientSnapshot[] = results.map((p) => ({
       name: p.name,
+      age: p.age,
+      gender: p.g,
       rpi: p.rpi,
       tier: p.tier,
       manualRisk: p.sr,

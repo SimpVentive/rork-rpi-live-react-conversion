@@ -94,6 +94,8 @@ export interface LifeOverride {
 
 export interface PatientSnapshot {
   name: string;
+  age?: number;
+  gender?: 'M' | 'F';
   rpi: number;
   tier: 'Red' | 'Amber' | 'Green';
   manualRisk: 'H' | 'M' | 'L' | 'U';

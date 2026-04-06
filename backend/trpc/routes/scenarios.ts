@@ -51,6 +51,8 @@ export const scenariosRouter = createTRPCRouter({
       acc: z.number(),
       patients: z.array(z.object({
         name: z.string(),
+        age: z.number().optional(),
+        gender: z.enum(["M", "F"]).optional(),
         rpi: z.number(),
         tier: z.string(),
         manualRisk: z.string(),

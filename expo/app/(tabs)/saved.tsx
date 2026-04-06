@@ -10,6 +10,8 @@ import Colors from '@/constants/colors';
 import { SavedScenario, PatientSnapshot } from '@/data/types';
 import { tierColor, riskColor, riskLabel } from '@/data/scoring';
 
+type PatientMeta = { age: number; gender: 'M' | 'F' };
+
 function WeightBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
   const pct = total > 0 ? Math.min(100, Math.round(value / total * 100)) : 0;
   return (
@@ -71,12 +73,39 @@ const prStyles = StyleSheet.create({
   manual: { width: 55, fontSize: 11, fontWeight: '700', textAlign: 'right' },
 });
 
-const ScenarioCard = React.memo(function ScenarioCard({ sc, onDelete, getDisplayName }: { sc: SavedScenario; onDelete: () => void; getDisplayName: (n: string) => string }) {
+const ScenarioCard = React.memo(function ScenarioCard({
+  sc,
+  scenarioNumber,
+  patientMetaByName,
+  onDelete,
+  getDisplayName,
+}: {
+  sc: SavedScenario;
+  scenarioNumber: number;
+  patientMetaByName: Map<string, PatientMeta>;
+  onDelete: () => void;
+  getDisplayName: (n: string) => string;
+}) {
   const total = sc.W.start + sc.W.rom + sc.W.physio + sc.W.anthro + sc.W.comor + sc.W.life;
   const [showSubWeights, setShowSubWeights] = useState<boolean>(false);
   const [showPatients, setShowPatients] = useState<boolean>(false);
 
   const sw = sc.SW;
+  const enrichedPatients = sc.patients.map((p) => {
+    const meta = patientMetaByName.get(p.name);
+    return {
+      ...p,
+      age: typeof p.age === 'number' ? p.age : meta?.age,
+      gender: p.gender || meta?.gender,
+    };
+  });
+  const cohortSize = enrichedPatients.length || sc.total;
+  const femaleCount = enrichedPatients.filter((p) => p.gender === 'F').length;
+  const maleCount = enrichedPatients.filter((p) => p.gender === 'M').length;
+  const patientsWithAge = enrichedPatients.filter((p) => typeof p.age === 'number');
+  const averageAge = patientsWithAge.length > 0
+    ? (patientsWithAge.reduce((sum, p) => sum + (p.age || 0), 0) / patientsWithAge.length).toFixed(1)
+    : null;
 
   return (
     <View style={scStyles.card}>
@@ -84,13 +113,21 @@ const ScenarioCard = React.memo(function ScenarioCard({ sc, onDelete, getDisplay
         <View>
           <View style={scStyles.headerRow}>
             <Save size={14} color={Colors.blue} />
-            <Text style={scStyles.timestamp}>{sc.ts}</Text>
+            <Text style={scStyles.timestamp}>Scenario {scenarioNumber}</Text>
           </View>
+          <Text style={scStyles.dateText}>Date: {sc.ts}</Text>
         </View>
         <TouchableOpacity style={scStyles.deleteBtn} onPress={onDelete} activeOpacity={0.7}>
           <Trash2 size={14} color={Colors.redDark} />
           <Text style={scStyles.deleteText}>Delete</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={scStyles.cohortCard}>
+        <Text style={scStyles.cohortTitle}>Cohort Data</Text>
+        <Text style={scStyles.cohortText}>Size: {cohortSize}</Text>
+        <Text style={scStyles.cohortText}>Gender Distribution: Female {femaleCount}, Male {maleCount}</Text>
+        <Text style={scStyles.cohortText}>Average Age: {averageAge ?? 'N/A'}</Text>
       </View>
 
       <Text style={scStyles.sectionTitle}>Group Weights (sum={total})</Text>
@@ -248,8 +285,12 @@ const scStyles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   timestamp: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  dateText: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
   deleteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#fca5a5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
   deleteText: { fontSize: 13, fontWeight: '700', color: Colors.redDark },
+  cohortCard: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, marginBottom: 12 },
+  cohortTitle: { fontSize: 12, fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 },
+  cohortText: { fontSize: 13, color: '#475569', marginBottom: 4 },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
   weightsGrid: { marginBottom: 12 },
   expandBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, marginBottom: 12 },
@@ -276,7 +317,10 @@ const scStyles = StyleSheet.create({
 
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
-  const { savedScenarios, deleteScenario, clearAllScenarios, getDisplayName } = useRPI();
+  const { patients, savedScenarios, deleteScenario, clearAllScenarios, getDisplayName } = useRPI();
+  const patientMetaByName = new Map(
+    patients.map((patient) => [patient.name, { age: patient.age, gender: patient.g }]),
+  );
 
   const handleDelete = useCallback((id: number) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -316,8 +360,15 @@ export default function SavedScreen() {
             <Text style={styles.emptyText}>Adjust weight sliders, set manual classifications, then tap Save to capture the full cohort snapshot.</Text>
           </View>
         ) : (
-          savedScenarios.map((sc) => (
-            <ScenarioCard key={sc.id} sc={sc} onDelete={() => handleDelete(sc.id)} getDisplayName={getDisplayName} />
+          savedScenarios.map((sc, index) => (
+            <ScenarioCard
+              key={sc.id}
+              sc={sc}
+              scenarioNumber={index + 1}
+              patientMetaByName={patientMetaByName}
+              onDelete={() => handleDelete(sc.id)}
+              getDisplayName={getDisplayName}
+            />
           ))
         )}
       </ScrollView>

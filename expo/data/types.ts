@@ -28,6 +28,7 @@ export interface PatientRaw {
   tight: number;
   knots: number;
   site: string;
+  physioNotPerformed?: boolean;
 }
 
 export interface PatientResult extends PatientRaw {

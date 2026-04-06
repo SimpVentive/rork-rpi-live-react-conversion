@@ -50,13 +50,21 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wid
   const rc = riskColor(p.sr);
   const match = getMatchType(p.sr, p.tier);
   const matchColor = match === 'Concordant' ? Colors.greenDark : match === 'Partial' ? Colors.amberDark : match === 'Discordant' ? Colors.redDark : Colors.textMuted;
+  const noPhysio = !!p.physioNotPerformed;
 
   if (wide) {
     return (
       <TouchableOpacity style={styles.tableRow} onPress={onPress} activeOpacity={0.7}>
         <View style={[styles.patientInfo, styles.nameCell]}>
           <Text style={styles.patientName} numberOfLines={1}>{displayName}</Text>
-          <Text style={styles.patientMetaText}>{p.age}{p.g} · {p.site}</Text>
+          <View style={styles.patientMetaRow}>
+            <Text style={styles.patientMetaText}>{p.age}{p.g} · {p.site}</Text>
+            {noPhysio && (
+              <View style={styles.noPhysioBadge}>
+                <Text style={styles.noPhysioBadgeText}>No Physio</Text>
+              </View>
+            )}
+          </View>
         </View>
         <Text style={[styles.riskText, { color: rc }]}>{riskLabel(p.sr)}</Text>
         <View style={[styles.tierPill, { backgroundColor: p.tier === 'Red' ? Colors.redBg : p.tier === 'Amber' ? Colors.amberBg : Colors.greenBg, borderColor: tc }]}>
@@ -81,6 +89,11 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wid
           <View style={styles.siteBadge}>
             <Text style={styles.siteBadgeText}>{p.site}</Text>
           </View>
+          {noPhysio && (
+            <View style={styles.noPhysioBadgeCompact}>
+              <Text style={styles.noPhysioBadgeText}>No Physio</Text>
+            </View>
+          )}
           <Text style={[styles.riskText, { color: rc }]}>{riskLabel(p.sr)}</Text>
         </View>
       </View>
@@ -313,131 +326,130 @@ export default function DashboardScreen() {
   );
 }
 
-// function OptimizationModal({ visible, onClose, results, currentWeights, currentTga, currentTar, currentStats, onApply }: {
-//   visible: boolean;
-//   onClose: () => void;
-//   results: OptimizationResult | null;
-//   currentWeights: GroupWeights;
-//   currentTga: number;
-//   currentTar: number;
-//   currentStats: { acc: number; sens: number; prec: number };
-//   onApply: () => void;
-// }) {
-//   if (!results) return null;
+function OptimizationModal({ visible, onClose, results, currentWeights, currentTga, currentTar, currentStats, onApply }: {
+  visible: boolean;
+  onClose: () => void;
+  results: OptimizationResult | null;
+  currentWeights: GroupWeights;
+  currentTga: number;
+  currentTar: number;
+  currentStats: { acc: number; sens: number; prec: number };
+  onApply: () => void;
+}) {
+  if (!results) return null;
 
-//   return (
-//     <Modal visible={visible} transparent animationType="fade">
-//       <View style={styles.modalOverlay}>
-//         <View style={styles.modalContent}>
-//           <Text style={styles.modalTitle}>Optimization Results</Text>
-          
-//           <Text style={styles.modalSubtitle}>
-//             Tested {results.combinations.toLocaleString()} combinations
-//           </Text>
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Optimization Results</Text>
+          <Text style={styles.modalSubtitle}>
+            Tested {results.combinations.toLocaleString()} combinations
+          </Text>
 
-//           <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-//             <View style={styles.statsSection}>
-//               <Text style={styles.sectionTitle}>Performance Metrics</Text>
-//               <View style={styles.statsComparison}>
-//                 <View style={styles.statsColumn}>
-//                   <Text style={styles.columnTitle}>Before</Text>
-//                   <View style={styles.statItem}>
-//                     <Text style={styles.statValue}>{currentStats.acc}%</Text>
-//                     <Text style={styles.statLabel}>Accuracy</Text>
-//                   </View>
-//                   <View style={styles.statItem}>
-//                     <Text style={styles.statValue}>{currentStats.prec}%</Text>
-//                     <Text style={styles.statLabel}>Precision</Text>
-//                   </View>
-//                   <View style={styles.statItem}>
-//                     <Text style={styles.statValue}>{currentStats.sens}%</Text>
-//                     <Text style={styles.statLabel}>Sensitivity</Text>
-//                   </View>
-//                 </View>
-//                 <View style={styles.statsColumn}>
-//                   <Text style={styles.columnTitle}>After</Text>
-//                   <View style={styles.statItem}>
-//                     <Text style={[styles.statValue, results.stats.acc !== currentStats.acc && styles.statValueChanged]}>
-//                       {results.stats.acc}%
-//                     </Text>
-//                     <Text style={styles.statLabel}>Accuracy</Text>
-//                   </View>
-//                   <View style={styles.statItem}>
-//                     <Text style={[styles.statValue, results.stats.prec !== currentStats.prec && styles.statValueChanged]}>
-//                       {results.stats.prec}%
-//                     </Text>
-//                     <Text style={styles.statLabel}>Precision</Text>
-//                   </View>
-//                   <View style={styles.statItem}>
-//                     <Text style={[styles.statValue, results.stats.sens !== currentStats.sens && styles.statValueChanged]}>
-//                       {results.stats.sens}%
-//                     </Text>
-//                     <Text style={styles.statLabel}>Sensitivity</Text>
-//                   </View>
-//                 </View>
-//               </View>
-//             </View>
+          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.statsSection}>
+              <Text style={styles.sectionTitle}>Performance Metrics</Text>
+              <View style={styles.statsComparison}>
+                <View style={styles.statsColumn}>
+                  <Text style={styles.columnTitle}>Before</Text>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statValue}>{currentStats.acc}%</Text>
+                    <Text style={styles.statLabel}>Accuracy</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statValue}>{currentStats.prec}%</Text>
+                    <Text style={styles.statLabel}>Precision</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statValue}>{currentStats.sens}%</Text>
+                    <Text style={styles.statLabel}>Sensitivity</Text>
+                  </View>
+                </View>
+                <View style={styles.statsColumn}>
+                  <Text style={styles.columnTitle}>After</Text>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statValue, results.stats.acc !== currentStats.acc && styles.statValueChanged]}>
+                      {results.stats.acc}%
+                    </Text>
+                    <Text style={styles.statLabel}>Accuracy</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statValue, results.stats.prec !== currentStats.prec && styles.statValueChanged]}>
+                      {results.stats.prec}%
+                    </Text>
+                    <Text style={styles.statLabel}>Precision</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statValue, results.stats.sens !== currentStats.sens && styles.statValueChanged]}>
+                      {results.stats.sens}%
+                    </Text>
+                    <Text style={styles.statLabel}>Sensitivity</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
 
-//             <View style={styles.weightsSection}>
-//               <Text style={styles.sectionTitle}>Weights & Thresholds</Text>
-//               <View style={styles.weightsComparison}>
-//                 <View style={styles.weightsColumn}>
-//                   <Text style={styles.columnTitle}>Before</Text>
-//                   {Object.entries(currentWeights).map(([key, value]) => (
-//                     <View key={key} style={styles.weightRow}>
-//                       <Text style={styles.weightLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
-//                       <Text style={styles.weightValue}>{value}%</Text>
-//                     </View>
-//                   ))}
-//                   <View style={styles.thresholdRowModal}>
-//                     <Text style={styles.weightLabel}>TGA</Text>
-//                     <Text style={styles.weightValue}>{currentTga}</Text>
-//                   </View>
-//                   <View style={styles.thresholdRowModal}>
-//                     <Text style={styles.weightLabel}>TAR</Text>
-//                     <Text style={styles.weightValue}>{currentTar}</Text>
-//                   </View>
-//                 </View>
-//                 <View style={styles.weightsColumn}>
-//                   <Text style={styles.columnTitle}>After</Text>
-//                   {Object.entries(results.weights).map(([key, value]) => (
-//                     <View key={key} style={styles.weightRow}>
-//                       <Text style={styles.weightLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
-//                       <Text style={[styles.weightValue, value !== currentWeights[key] && styles.weightValueChanged]}>
-//                         {value}%
-//                       </Text>
-//                     </View>
-//                   ))}
-//                   <View style={styles.thresholdRowModal}>
-//                     <Text style={styles.weightLabel}>TGA</Text>
-//                     <Text style={[styles.weightValue, results.tga !== currentTga && styles.weightValueChanged]}>
-//                       {results.tga}
-//                     </Text>
-//                   </View>
-//                   <View style={styles.thresholdRowModal}>
-//                     <Text style={styles.weightLabel}>TAR</Text>
-//                     <Text style={[styles.weightValue, results.tar !== currentTar && styles.weightValueChanged]}>
-//                       {results.tar}
-//                     </Text>
-//                   </View>
-//                 </View>
-//               </View>
-//             </View>
-//           </ScrollView>
+            <View style={styles.weightsSection}>
+              <Text style={styles.sectionTitle}>Weights & Thresholds</Text>
+              <View style={styles.weightsComparison}>
+                <View style={styles.weightsColumn}>
+                  <Text style={styles.columnTitle}>Before</Text>
+                  {Object.entries(currentWeights).map(([key, value]) => (
+                    <View key={key} style={styles.weightRow}>
+                      <Text style={styles.weightLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+                      <Text style={styles.weightValue}>{value}%</Text>
+                    </View>
+                  ))}
+                  <View style={styles.thresholdRowModal}>
+                    <Text style={styles.weightLabel}>TGA</Text>
+                    <Text style={styles.weightValue}>{currentTga}</Text>
+                  </View>
+                  <View style={styles.thresholdRowModal}>
+                    <Text style={styles.weightLabel}>TAR</Text>
+                    <Text style={styles.weightValue}>{currentTar}</Text>
+                  </View>
+                </View>
+                <View style={styles.weightsColumn}>
+                  <Text style={styles.columnTitle}>After</Text>
+                  {Object.entries(results.weights).map(([key, value]) => (
+                    <View key={key} style={styles.weightRow}>
+                      <Text style={styles.weightLabel}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+                      <Text style={[styles.weightValue, value !== currentWeights[key as keyof GroupWeights] && styles.weightValueChanged]}>
+                        {value}%
+                      </Text>
+                    </View>
+                  ))}
+                  <View style={styles.thresholdRowModal}>
+                    <Text style={styles.weightLabel}>TGA</Text>
+                    <Text style={[styles.weightValue, results.tga !== currentTga && styles.weightValueChanged]}>
+                      {results.tga}
+                    </Text>
+                  </View>
+                  <View style={styles.thresholdRowModal}>
+                    <Text style={styles.weightLabel}>TAR</Text>
+                    <Text style={[styles.weightValue, results.tar !== currentTar && styles.weightValueChanged]}>
+                      {results.tar}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
 
-//           <View style={styles.modalButtons}>
-//             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
-//               <Text style={styles.cancelBtnText}>Cancel</Text>
-//             </TouchableOpacity>
-//             <TouchableOpacity style={styles.applyBtn} onPress={onApply} activeOpacity={0.7}>
-//               <Text style={styles.applyBtnText}>Apply Optimal Weights</Text>
-//             </TouchableOpacity>
-//           </View>
-//         </View>
-//       </View>
-//     </Modal>
-//   );
-// }
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.applyBtn} onPress={onApply} activeOpacity={0.7}>
+              <Text style={styles.applyBtnText}>Apply Optimal Weights</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 const styles = StyleSheet.create({
   screen: {
@@ -738,7 +750,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   tableHeader: {
-  tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
@@ -790,6 +801,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
+  },
+  patientMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  noPhysioBadge: {
+    backgroundColor: '#e2e8f0',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  noPhysioBadgeCompact: {
+    backgroundColor: '#e2e8f0',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  noPhysioBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
   },
   patientMetaText: {
     fontSize: 12,

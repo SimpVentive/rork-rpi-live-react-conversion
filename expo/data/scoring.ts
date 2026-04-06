@@ -64,6 +64,13 @@ export function sPhysio(p: PatientRaw, sw: AllSubWeights): number {
   return Math.min(100, Math.round(raw * 100));
 }
 
+export function isPhysioNotPerformed(p: PatientRaw): boolean {
+  if (!p.physioNotPerformed) return false;
+  return p.fab_l === 0 && p.fair_l === 0 && p.slr_l === 0 &&
+    p.fab_r === 0 && p.fair_r === 0 && p.slr_r === 0 &&
+    p.hyp === 0 && p.tend === 0 && p.tight === 0 && p.knots === 0;
+}
+
 function durationPts(yrsStr: string): number {
   const y = parseInt(yrsStr) || 0;
   return [0, 0.25, 0.5, 0.75, 1][Math.min(y, 4)];
@@ -95,6 +102,15 @@ export function calcRPI(
   SW: AllSubWeights,
   lifeOverride?: LifeOverride,
 ): number {
+  const noPhysio = isPhysioNotPerformed(p);
+  if (noPhysio) {
+    const remainingTotal = W.start + W.rom + W.anthro + W.comor + W.life;
+    if (remainingTotal === 0) return 0;
+    const wtd = W.start * sSTarT(p) + W.rom * sROM(p, SW) +
+      W.anthro * sAnthropo(p, SW) + W.comor * sComor(p, SW) + W.life * sLife(p, SW, lifeOverride);
+    return Math.round(wtd / remainingTotal * 100);
+  }
+
   const tw = W.start + W.rom + W.physio + W.anthro + W.comor + W.life;
   if (tw === 0) return 0;
   const wtd = W.start * sSTarT(p) + W.rom * sROM(p, SW) + W.physio * sPhysio(p, SW) +
@@ -136,11 +152,16 @@ export function getResults(
   tar: number,
   lifeOverrides: Record<string, LifeOverride>,
   manualOverrides?: Record<string, 'H' | 'M' | 'L' | 'U'>,
+  physioNotPerformed?: Record<string, boolean>,
 ): PatientResult[] {
   return patients.map((p) => {
-    const rpi = calcRPI(p, W, SW, lifeOverrides[p.name]);
+    const patient = {
+      ...p,
+      physioNotPerformed: physioNotPerformed?.[p.name] ?? p.physioNotPerformed ?? false,
+    };
+    const rpi = calcRPI(patient, W, SW, lifeOverrides[p.name]);
     const sr = (manualOverrides && manualOverrides[p.name]) ? manualOverrides[p.name] : p.sr;
-    return { ...p, sr, rpi, tier: getTier(rpi, tga, tar) };
+    return { ...patient, sr, rpi, tier: getTier(rpi, tga, tar) };
   });
 }
 

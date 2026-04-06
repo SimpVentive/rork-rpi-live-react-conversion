@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,16 +13,16 @@ import {
   tierColor, riskColor, riskLabel, getMatchType, sAge,
 } from '@/data/scoring';
 
-function DomainBar({ label, score, icon, weight }: { label: string; score: number; icon: React.ReactNode; weight: number }) {
+function DomainBar({ label, score, icon, weight, disabled }: { label: string; score: number; icon: React.ReactNode; weight: number; disabled?: boolean }) {
   const color = score >= 60 ? Colors.red : score >= 35 ? Colors.amber : Colors.green;
   return (
-    <View style={dbStyles.row}>
+    <View style={[dbStyles.row, disabled && dbStyles.disabledRow]}>
       <View style={dbStyles.iconWrap}>{icon}</View>
       <View style={dbStyles.info}>
         <View style={dbStyles.labelRow}>
-          <Text style={dbStyles.label}>{label}</Text>
-          <Text style={dbStyles.weight}>wt:{weight}%</Text>
-          <Text style={[dbStyles.score, { color }]}>{score}</Text>
+          <Text style={[dbStyles.label, disabled && dbStyles.disabledText]}>{label}</Text>
+          <Text style={[dbStyles.weight, disabled && dbStyles.disabledText]}>wt:{weight}%</Text>
+          <Text style={[dbStyles.score, { color }, disabled && dbStyles.disabledText]}>{score}</Text>
         </View>
         <View style={dbStyles.track}>
           <View style={[dbStyles.fill, { width: `${Math.min(100, score)}%`, backgroundColor: color }]} />
@@ -42,6 +42,8 @@ const dbStyles = StyleSheet.create({
   score: { fontSize: 16, fontWeight: '900', minWidth: 30, textAlign: 'right' },
   track: { height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
+  disabledRow: { opacity: 0.5 },
+  disabledText: { color: '#94a3b8' },
 });
 
 function SubFactorRow({ domain, name, val, max }: { domain: string; name: string; val: number; max: number }) {
@@ -75,11 +77,16 @@ export default function PatientDetailScreen() {
   const router = useRouter();
   const { name: encodedName } = useLocalSearchParams<{ name: string }>();
   const patientName = decodeURIComponent(encodedName || '');
-  const { results, SW, W, getLifeOverride, tga, tar, getDisplayName, setManualClassification, manualOverrides } = useRPI();
+  const { results, SW, W, getLifeOverride, tga, tar, getDisplayName, setManualClassification, manualOverrides, isPhysioNotPerformed, setPhysioNotPerformed } = useRPI();
 
   const patient = useMemo(
     () => results.find((r) => r.name === patientName) ?? null,
     [results, patientName],
+  );
+
+  const physioNotPerformed = useMemo(
+    () => (patient ? isPhysioNotPerformed(patient.name) : false),
+    [patient, isPhysioNotPerformed],
   );
 
   const domains = useMemo(() => {
@@ -219,11 +226,27 @@ export default function PatientDetailScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Domain Activation Profile</Text>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Physio assessment not performed</Text>
+            <Switch
+              value={physioNotPerformed}
+              onValueChange={(value) => setPhysioNotPerformed(patient.name, value)}
+              trackColor={{ false: '#94a3b8', true: Colors.bluePale }}
+              thumbColor={physioNotPerformed ? Colors.blue : Colors.textMuted}
+              style={styles.toggleSwitch}
+            />
+          </View>
           {domains && (
             <>
               <DomainBar label="STarT Back" score={domains.start} weight={W.start} icon={<Brain size={16} color={Colors.blue} />} />
               <DomainBar label="VR ROM" score={domains.rom} weight={W.rom} icon={<Activity size={16} color={Colors.green} />} />
-              <DomainBar label="Physio" score={domains.physio} weight={W.physio} icon={<Dumbbell size={16} color={Colors.purple} />} />
+              <DomainBar
+                label="Physio"
+                score={domains.physio}
+                weight={W.physio}
+                icon={<Dumbbell size={16} color={Colors.purple} />}
+                disabled={physioNotPerformed}
+              />
               <DomainBar label="Anthropo" score={domains.anthro} weight={W.anthro} icon={<User size={16} color={Colors.amber} />} />
               <DomainBar label="Comorbid" score={domains.comor} weight={W.comor} icon={<Heart size={16} color={Colors.red} />} />
               <DomainBar label="Lifestyle" score={domains.life} weight={W.life} icon={<Bone size={16} color={Colors.textMuted} />} />
@@ -273,7 +296,10 @@ export default function PatientDetailScreen() {
             {domains && (
               <>
                 <Text style={styles.formulaText}>
-                  RPI = ({W.start}x{domains.start} + {W.rom}x{domains.rom} + {W.physio}x{domains.physio} + {W.anthro}x{domains.anthro} + {W.comor}x{domains.comor} + {W.life}x{domains.life}) / {totalW}
+                  RPI = ({W.start}x{domains.start} + {W.rom}x{domains.rom}
+                  {physioNotPerformed ? '' : ` + ${W.physio}x${domains.physio}`}
+                  + {W.anthro}x{domains.anthro} + {W.comor}x{domains.comor} + {W.life}x{domains.life})
+                  / {physioNotPerformed ? 100 : totalW}
                 </Text>
                 <Text style={[styles.formulaResult, { color: tc }]}>= {patient.rpi}</Text>
               </>
@@ -550,6 +576,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: '#e2e8f0',
     paddingBottom: 8,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    gap: 12,
+  },
+  toggleLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  toggleSwitch: {
+    transform: [{ scaleX: 0.95 }, { scaleY: 0.95 }],
   },
   legendRow: {
     flexDirection: 'row',

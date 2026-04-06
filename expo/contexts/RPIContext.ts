@@ -258,10 +258,11 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [optResults, setOptResults] = useState<OptimizationResult | null>(null);
   const [showOptModal, setShowOptModal] = useState<boolean>(false);
   const [enforceMin10, setEnforceMin10] = useState<boolean>(false);
+  const [physioNotPerformedMap, setPhysioNotPerformedMap] = useState<Record<string, boolean>>({});
 
   const results = useMemo<PatientResult[]>(
-    () => getResults(patients, W, SW, tga, tar, lifeOverrides, manualOverrides),
-    [patients, W, SW, tga, tar, lifeOverrides, manualOverrides],
+    () => getResults(patients, W, SW, tga, tar, lifeOverrides, manualOverrides, physioNotPerformedMap),
+    [patients, W, SW, tga, tar, lifeOverrides, manualOverrides, physioNotPerformedMap],
   );
 
   const stats = useMemo(() => computeStats(results), [results]);
@@ -297,6 +298,12 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
   const weightTotal = useMemo(() => {
     return W.start + W.rom + W.physio + W.anthro + W.comor + W.life;
   }, [W]);
+
+  const setPhysioNotPerformed = useCallback((name: string, value: boolean) => {
+    setPhysioNotPerformedMap((prev) => ({ ...prev, [name]: value }));
+  }, []);
+
+  const isPhysioNotPerformed = useCallback((name: string) => !!physioNotPerformedMap[name], [physioNotPerformedMap]);
 
   const runOptimization = useCallback(async (enforceMin10: boolean = false) => {
     setOptimizing(true);
@@ -797,6 +804,8 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     runOptimization,
     enforceMin10,
     setEnforceMin10,
+    setPhysioNotPerformed,
+    isPhysioNotPerformed,
     applyOptimalWeights,
   }), [
     patients, W, updateWeight, weightTotal, SW, updateSubWeight, tga, tar,
@@ -807,6 +816,6 @@ const [isOfflineMode, setIsOfflineMode] = useState(false);
     selectedPatient, sortCol, sortDir, toggleSort,
     searchQuery, filterRisk, filterTier, filterSite, filterGender,
     getDisplayName, anonymize, isDataLoading, isDbConnected,
-    optimizing, optProgress, optResults, showOptModal, setShowOptModal, runOptimization, enforceMin10, setEnforceMin10, applyOptimalWeights,
+    optimizing, optProgress, optResults, showOptModal, setShowOptModal, runOptimization, enforceMin10, setEnforceMin10, setPhysioNotPerformed, isPhysioNotPerformed, applyOptimalWeights,
   ]);
 });

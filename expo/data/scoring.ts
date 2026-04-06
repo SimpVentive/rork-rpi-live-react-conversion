@@ -101,11 +101,22 @@ export function calcRPI(
 ): number {
   const noPhysio = isPhysioNotPerformed(p);
   if (noPhysio) {
-    const remainingTotal = W.start + W.rom + W.anthro + W.comor + W.life;
+    const remainingStart = W.start;
+    const remainingRom = W.rom;
+    const remainingAnthro = W.anthro;
+    const remainingComor = W.comor;
+    const remainingLife = W.life;
+    const remainingTotal = remainingStart + remainingRom + remainingAnthro + remainingComor + remainingLife;
     if (remainingTotal === 0) return 0;
-    const wtd = W.start * sSTarT(p) + W.rom * sROM(p, SW) +
-      W.anthro * sAnthropo(p, SW) + W.comor * sComor(p, SW) + W.life * sLife(p, SW, lifeOverride);
-    return Math.round(wtd / remainingTotal);
+    const scale = 100 / remainingTotal;
+    const scaledStart = remainingStart * scale;
+    const scaledRom = remainingRom * scale;
+    const scaledAnthro = remainingAnthro * scale;
+    const scaledComor = remainingComor * scale;
+    const scaledLife = remainingLife * scale;
+    const wtd = scaledStart * sSTarT(p) + scaledRom * sROM(p, SW) +
+      scaledAnthro * sAnthropo(p, SW) + scaledComor * sComor(p, SW) + scaledLife * sLife(p, SW, lifeOverride);
+    return Math.round(wtd / 100);
   }
 
   const tw = W.start + W.rom + W.physio + W.anthro + W.comor + W.life;

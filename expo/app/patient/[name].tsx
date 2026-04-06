@@ -94,12 +94,12 @@ export default function PatientDetailScreen() {
     return {
       start: sSTarT(patient),
       rom: sROM(patient, SW),
-      physio: sPhysio(patient, SW),
+      physio: physioNotPerformed ? 0 : sPhysio(patient, SW),
       anthro: sAnthropo(patient, SW),
       comor: sComor(patient, SW),
       life: sLife(patient, SW, getLifeOverride(patient.name)),
     };
-  }, [patient, SW, getLifeOverride]);
+  }, [patient, SW, getLifeOverride, physioNotPerformed]);
 
   const handleClose = useCallback(() => {
     router.back();

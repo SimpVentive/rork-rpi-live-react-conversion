@@ -1,11 +1,20 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, LayoutAnimation, Platform, UIManager } from 'react-native';
-import { ChevronDown, ChevronUp, Save, SlidersHorizontal, ChevronRight, AlertTriangle } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, LayoutAnimation, Platform, UIManager, Modal, ActivityIndicator } from 'react-native';
+import { ChevronDown, ChevronUp, Save, SlidersHorizontal, ChevronRight, AlertTriangle, Zap } from 'lucide-react-native';
 import { useRPI } from '@/contexts/RPIContext';
 import Slider from '@/components/Slider';
 import Colors from '@/constants/colors';
-import { GroupWeights, AllSubWeights } from '@/data/types';
+import { GroupWeights, AllSubWeights, PatientRaw } from '@/data/types';
+import { getResults, computeStats, DEFAULT_SUB_WEIGHTS } from '@/data/scoring';
 import * as Haptics from 'expo-haptics';
+
+type OptimizationResult = {
+  weights: GroupWeights;
+  tga: number;
+  tar: number;
+  stats: { acc: number; sens: number; prec: number };
+  combinations: number;
+};
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -181,12 +190,112 @@ function DomainRow({ config, expanded, onToggle }: {
 const MemoDomainRow = React.memo(DomainRow);
 
 function WeightControlsInner() {
-  const { weightTotal, tga, setTGA, tar, setTAR, saveScenario } = useRPI();
+  const { weightTotal, tga, setTGA, tar, setTAR, saveScenario, patients, W, updateWeight } = useRPI();
   const [panelOpen, setPanelOpen] = useState<boolean>(true);
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [saveFlash, setSaveFlash] = useState<boolean>(false);
+  const [optimizing, setOptimizing] = useState<boolean>(false);
+  const [optProgress, setOptProgress] = useState<string>('');
+  const [optResults, setOptResults] = useState<OptimizationResult | null>(null);
+  const [showOptModal, setShowOptModal] = useState<boolean>(false);
 
   const total = weightTotal;
+
+  const runOptimization = useCallback(async () => {
+    setOptimizing(true);
+    setOptProgress('Starting optimization...');
+
+    // Get classified patients only
+    const classifiedPatients = patients.filter((p: PatientRaw) => p.sr !== 'U');
+
+    // Weight steps: 0, 20, 40, 60, 80, 100 (steps of 20% for reasonable performance)
+    const weightSteps = [0, 20, 40, 60, 80, 100];
+    
+    // TGA steps: 25, 30, 35, 40, 45
+    const tgaSteps = [25, 30, 35, 40, 45];
+    
+    // TAR steps: 45, 50, 55, 60, 65
+    const tarSteps = [45, 50, 55, 60, 65];
+
+    let bestResult = {
+      weights: { start: 0, rom: 0, physio: 0, anthro: 0, comor: 0, life: 0 },
+      tga: 35,
+      tar: 55,
+      stats: { acc: 0, sens: 0, prec: 0 },
+      combinations: 0
+    };
+
+    const totalCombinations = Math.pow(weightSteps.length, 6) * tgaSteps.length * tarSteps.length;
+    let tested = 0;
+
+    // Nested loops for all weight combinations (getResults will normalize weights)
+    for (const start of weightSteps) {
+      for (const rom of weightSteps) {
+        for (const physio of weightSteps) {
+          for (const anthro of weightSteps) {
+            for (const comor of weightSteps) {
+              for (const life of weightSteps) {
+                // Skip if all weights are 0
+                if (start + rom + physio + anthro + comor + life === 0) continue;
+
+                for (const testTga of tgaSteps) {
+                  for (const testTar of tarSteps) {
+                    if (testTar <= testTga) continue; // TAR must be > TGA
+
+                    const testWeights: GroupWeights = { start, rom, physio, anthro, comor, life };
+                    const results = getResults(classifiedPatients, testWeights, DEFAULT_SUB_WEIGHTS, testTga, testTar, {}, {});
+                    const stats = computeStats(results);
+
+                    tested++;
+                    if (tested % 500 === 0) {
+                      setOptProgress(`Testing... ${tested}/${totalCombinations} combinations`);
+                      await new Promise(resolve => setTimeout(resolve, 1)); // Allow UI update
+                    }
+
+                    // Check if this is better
+                    if (stats.acc > bestResult.stats.acc || 
+                        (stats.acc === bestResult.stats.acc && stats.sens > bestResult.stats.sens)) {
+                      bestResult = {
+                        weights: { ...testWeights },
+                        tga: testTga,
+                        tar: testTar,
+                        stats: { acc: stats.acc, sens: stats.sens, prec: stats.prec },
+                        combinations: tested
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    setOptResults(bestResult);
+    setOptimizing(false);
+    setShowOptModal(true);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [patients]);
+
+  const applyOptimalWeights = useCallback(() => {
+    if (!optResults) return;
+    
+    // Update weights
+    Object.entries(optResults.weights).forEach(([key, value]) => {
+      updateWeight(key as keyof GroupWeights, value);
+    });
+    
+    // Update thresholds
+    setTGA(optResults.tga);
+    setTAR(optResults.tar);
+    
+    // Save scenario
+    saveScenario();
+    
+    setShowOptModal(false);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [optResults, updateWeight, setTGA, setTAR, saveScenario]);
 
   const handleSave = useCallback(() => {
     saveScenario();
@@ -219,6 +328,17 @@ function WeightControlsInner() {
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity
+            style={[styles.optimaBtn, optimizing && styles.optimaBtnDisabled]}
+            onPress={runOptimization}
+            disabled={optimizing}
+            activeOpacity={0.7}
+          >
+            <Zap size={13} color={optimizing ? '#64748b' : '#fbbf24'} />
+            <Text style={[styles.optimaBtnText, optimizing && styles.optimaBtnTextDisabled]}>
+              {optimizing ? optProgress : 'Find Optima'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.saveBtn, saveFlash && styles.saveBtnFlash]}
             onPress={handleSave}
             activeOpacity={0.7}
@@ -231,6 +351,13 @@ function WeightControlsInner() {
           {panelOpen ? <ChevronUp size={18} color={Colors.bluePale} /> : <ChevronDown size={18} color={Colors.bluePale} />}
         </View>
       </TouchableOpacity>
+
+      {optimizing && (
+        <View style={styles.progressBanner}>
+          <ActivityIndicator size="small" color="#fbbf24" />
+          <Text style={styles.progressText}>{optProgress}</Text>
+        </View>
+      )}
 
       {panelOpen && total !== 100 && (
         <View style={styles.warningBanner}>
@@ -287,7 +414,116 @@ function WeightControlsInner() {
           </View>
         </ScrollView>
       )}
+
+      <OptimizationModal
+        visible={showOptModal}
+        onClose={() => setShowOptModal(false)}
+        results={optResults}
+        currentWeights={W}
+        currentTga={tga}
+        currentTar={tar}
+        onApply={applyOptimalWeights}
+      />
     </View>
+  );
+}
+
+function OptimizationModal({ visible, onClose, results, currentWeights, currentTga, currentTar, onApply }: {
+  visible: boolean;
+  onClose: () => void;
+  results: OptimizationResult | null;
+  currentWeights: GroupWeights;
+  currentTga: number;
+  currentTar: number;
+  onApply: () => void;
+}) {
+  if (!results) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Optimization Complete</Text>
+          
+          <Text style={styles.modalSubtitle}>
+            Tested {results.combinations.toLocaleString()} combinations
+          </Text>
+
+          <View style={styles.statsSection}>
+            <Text style={styles.sectionTitle}>Performance Metrics</Text>
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{results.stats.acc}%</Text>
+                <Text style={styles.statLabel}>Accuracy</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{results.stats.sens}%</Text>
+                <Text style={styles.statLabel}>Sensitivity</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{results.stats.prec}%</Text>
+                <Text style={styles.statLabel}>Precision</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.weightsSection}>
+            <Text style={styles.sectionTitle}>Weights Comparison</Text>
+            <View style={styles.weightsComparison}>
+              <View style={styles.weightsColumn}>
+                <Text style={styles.columnTitle}>Current</Text>
+                {Object.entries(currentWeights).map(([key, value]) => (
+                  <View key={key} style={styles.weightRow}>
+                    <Text style={styles.weightLabel}>{key}</Text>
+                    <Text style={styles.weightValue}>{value}%</Text>
+                  </View>
+                ))}
+                <View style={styles.thresholdRowModal}>
+                  <Text style={styles.weightLabel}>TGA</Text>
+                  <Text style={styles.weightValue}>{currentTga}</Text>
+                </View>
+                <View style={styles.thresholdRowModal}>
+                  <Text style={styles.weightLabel}>TAR</Text>
+                  <Text style={styles.weightValue}>{currentTar}</Text>
+                </View>
+              </View>
+              <View style={styles.weightsColumn}>
+                <Text style={styles.columnTitle}>Optimal</Text>
+                {Object.entries(results.weights).map(([key, value]) => (
+                  <View key={key} style={styles.weightRow}>
+                    <Text style={styles.weightLabel}>{key}</Text>
+                    <Text style={[styles.weightValue, value !== currentWeights[key as keyof GroupWeights] && styles.weightValueChanged]}>
+                      {value}%
+                    </Text>
+                  </View>
+                ))}
+                <View style={styles.thresholdRowModal}>
+                  <Text style={styles.weightLabel}>TGA</Text>
+                  <Text style={[styles.weightValue, results.tga !== currentTga && styles.weightValueChanged]}>
+                    {results.tga}
+                  </Text>
+                </View>
+                <View style={styles.thresholdRowModal}>
+                  <Text style={styles.weightLabel}>TAR</Text>
+                  <Text style={[styles.weightValue, results.tar !== currentTar && styles.weightValueChanged]}>
+                    {results.tar}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.applyBtn} onPress={onApply} activeOpacity={0.7}>
+              <Text style={styles.applyBtnText}>Apply Optimal Weights</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -357,6 +593,174 @@ const styles = StyleSheet.create({
   },
   saveBtnTextFlash: {
     color: Colors.greenLight,
+  },
+  optimaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#451a03',
+    borderWidth: 1,
+    borderColor: '#92400e',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  optimaBtnDisabled: {
+    backgroundColor: '#1e293b',
+    borderColor: '#475569',
+  },
+  optimaBtnText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  optimaBtnTextDisabled: {
+    color: '#64748b',
+  },
+  progressBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#451a03',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#92400e',
+  },
+  progressText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalTitle: {
+    color: '#fbbf24',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    color: '#94a3b8',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    color: '#e2e8f0',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  statsSection: {
+    marginBottom: 20,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    color: '#fbbf24',
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  statLabel: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  weightsSection: {
+    marginBottom: 20,
+  },
+  weightsComparison: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  weightsColumn: {
+    flex: 1,
+  },
+  columnTitle: {
+    color: '#e2e8f0',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  weightRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  thresholdRowModal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+    marginTop: 4,
+    paddingTop: 6,
+  },
+  weightLabel: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  weightValue: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  weightValueChanged: {
+    color: '#fbbf24',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: '#374151',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: '#d1d5db',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  applyBtn: {
+    flex: 1,
+    backgroundColor: '#92400e',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  applyBtnText: {
+    color: '#fbbf24',
+    fontSize: 14,
+    fontWeight: '700',
   },
   body: {
     maxHeight: 520,

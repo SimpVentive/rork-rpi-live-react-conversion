@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, LayoutAnimation, Platform, UIManager, ActivityIndicator } from 'react-native';
 import { ChevronDown, ChevronUp, Save, SlidersHorizontal, ChevronRight, AlertTriangle } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useRPI } from '@/contexts/RPIContext';
 import Slider from '@/components/Slider';
 import Colors from '@/constants/colors';

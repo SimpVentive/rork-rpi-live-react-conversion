@@ -65,10 +65,7 @@ export function sPhysio(p: PatientRaw, sw: AllSubWeights): number {
 }
 
 export function isPhysioNotPerformed(p: PatientRaw): boolean {
-  if (!p.physioNotPerformed) return false;
-  return p.fab_l === 0 && p.fair_l === 0 && p.slr_l === 0 &&
-    p.fab_r === 0 && p.fair_r === 0 && p.slr_r === 0 &&
-    p.hyp === 0 && p.tend === 0 && p.tight === 0 && p.knots === 0;
+  return !!p.physioNotPerformed;
 }
 
 function durationPts(yrsStr: string): number {

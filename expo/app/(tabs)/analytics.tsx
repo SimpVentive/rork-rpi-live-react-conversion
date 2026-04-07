@@ -66,8 +66,8 @@ type GroupedMetricRow = {
 };
 
 type AnalysisResult =
-  | { type: 'horizontal'; title: string; excluded: number; filteredOut: number; rows: SingleMetricRow[]; chartWidth: number; color: string }
-  | { type: 'grouped'; title: string; excluded: number; filteredOut: number; groups: GroupedMetricRow[]; metrics: ClinicalKey[]; chartWidth: number }
+  | { type: 'horizontal'; title: string; excluded: number; filteredOut: number; rows: SingleMetricRow[]; chartWidth: number; color: string; yMax: number }
+  | { type: 'grouped'; title: string; excluded: number; filteredOut: number; groups: GroupedMetricRow[]; metrics: ClinicalKey[]; chartWidth: number; yMax: number }
   | { type: 'stacked'; title: string; excluded: number; filteredOut: number; rows: TierDistributionRow[]; chartWidth: number }
   | { type: 'heatmap'; title: string; excluded: number; filteredOut: number; rowLabels: string[]; columnLabels: string[]; cells: HeatmapCell[] };
 
@@ -99,10 +99,10 @@ const DEMOGRAPHIC_OPTIONS: Array<{ key: DemographicKey; label: string; title: st
 const CLINICAL_OPTIONS: Array<{ key: ClinicalKey; label: string; title: string }> = [
   { key: 'rpi', label: 'RPI Score (average)', title: 'Average RPI' },
   { key: 'start', label: 'STarT Score (average)', title: 'Average STarT Score' },
-  { key: 'romFlexion', label: 'ROM Flexion', title: 'Average Flexion Angle' },
-  { key: 'romExtension', label: 'ROM Extension', title: 'Average Extension Angle' },
-  { key: 'romLeft', label: 'ROM Left Rotation', title: 'Average Left Rotation Angle' },
-  { key: 'romRight', label: 'ROM Right Rotation', title: 'Average Right Rotation Angle' },
+  { key: 'romFlexion', label: 'ROM Flexion', title: 'Average Flexion Score' },
+  { key: 'romExtension', label: 'ROM Extension', title: 'Average Extension Score' },
+  { key: 'romLeft', label: 'ROM Left Rotation', title: 'Average Left Rotation Score' },
+  { key: 'romRight', label: 'ROM Right Rotation', title: 'Average Right Rotation Score' },
   { key: 'physio', label: 'Physio Score (average)', title: 'Average Physio Score' },
   { key: 'comor', label: 'Comorbidity Score (average)', title: 'Average Comorbidity Score' },
   { key: 'life', label: 'Lifestyle Score (average)', title: 'Average Lifestyle Score' },
@@ -224,6 +224,22 @@ function getAnalysisExplanation(analysis: AnalysisResult | null): string | null 
   return `${hottest.rowLabel} × ${hottest.columnLabel} has the highest value at ${Math.round(hottest.value)}, while ${coolest.rowLabel} × ${coolest.columnLabel} is lowest at ${Math.round(coolest.value)}. This heatmap highlights where combinations of two demographic subgroup filters concentrate higher or lower clinical values.`;
 }
 
+function getMetricScaleMax(metric: ClinicalKey): number {
+  if (metric === 'romFlexion' || metric === 'romExtension' || metric === 'romLeft' || metric === 'romRight') {
+    return 5;
+  }
+  return 100;
+}
+
+function getDisplayAxisMax(metrics: ClinicalKey[], values: number[]): number {
+  const baseMax = Math.max(...metrics.map((metric) => getMetricScaleMax(metric)));
+  const observedMax = Math.max(0, ...values);
+  if (baseMax <= 5) {
+    return Math.max(5, Math.ceil(observedMax));
+  }
+  return Math.max(baseMax, Math.ceil(observedMax / 10) * 10 || baseMax);
+}
+
 function SelectionChip({
   label,
   selected,
@@ -251,7 +267,7 @@ function SelectionChip({
   );
 }
 
-function HorizontalBarChart({ rows, width, color }: { rows: SingleMetricRow[]; width: number; color: string }) {
+function HorizontalBarChart({ rows, width, color, yMax }: { rows: SingleMetricRow[]; width: number; color: string; yMax: number }) {
   const leftLabelWidth = 124;
   const chartWidth = Math.max(160, width - leftLabelWidth - 30);
   const rowHeight = 40;
@@ -260,14 +276,14 @@ function HorizontalBarChart({ rows, width, color }: { rows: SingleMetricRow[]; w
     <Svg width={width} height={height}>
       {rows.map((row, index) => {
         const y = 10 + index * rowHeight;
-        const barWidth = Math.max(2, (row.value / 100) * chartWidth);
+        const barWidth = Math.max(2, (row.value / Math.max(yMax, 1)) * chartWidth);
         return (
           <React.Fragment key={row.label}>
             <SvgText x={0} y={y + 14} fontSize={12} fontWeight="600" fill="#334155">{row.label}</SvgText>
             <SvgText x={0} y={y + 28} fontSize={10} fill="#64748b">n={row.count}</SvgText>
             <Rect x={leftLabelWidth} y={y} width={chartWidth} height={18} rx={9} fill="#e2e8f0" />
             <Rect x={leftLabelWidth} y={y} width={barWidth} height={18} rx={9} fill={color} />
-            <SvgText x={leftLabelWidth + chartWidth - 38} y={y + 13} fontSize={11} fontWeight="700" fill="#0f172a">{Math.round(row.value)}</SvgText>
+            <SvgText x={leftLabelWidth + chartWidth - 38} y={y + 13} fontSize={11} fontWeight="700" fill="#0f172a">{row.value.toFixed(1)}</SvgText>
           </React.Fragment>
         );
       })}
@@ -275,7 +291,7 @@ function HorizontalBarChart({ rows, width, color }: { rows: SingleMetricRow[]; w
   );
 }
 
-function GroupedBarChart({ groups, metrics, width }: { groups: GroupedMetricRow[]; metrics: ClinicalKey[]; width: number }) {
+function GroupedBarChart({ groups, metrics, width, yMax }: { groups: GroupedMetricRow[]; metrics: ClinicalKey[]; width: number; yMax: number }) {
   const chartHeight = 260;
   const leftPad = 36;
   const bottomPad = 56;
@@ -285,11 +301,12 @@ function GroupedBarChart({ groups, metrics, width }: { groups: GroupedMetricRow[
   const groupWidth = innerWidth / Math.max(groups.length, 1);
   const barGap = 4;
   const barWidth = Math.max(10, (groupWidth - 14 - barGap * Math.max(0, metrics.length - 1)) / Math.max(metrics.length, 1));
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => Number((yMax * ratio).toFixed(yMax <= 5 ? 1 : 0)));
   return (
     <View>
       <Svg width={width} height={chartHeight}>
-        {[0, 25, 50, 75, 100].map((tick) => {
-          const y = topPad + innerHeight - (tick / 100) * innerHeight;
+        {ticks.map((tick) => {
+          const y = topPad + innerHeight - (tick / Math.max(yMax, 1)) * innerHeight;
           return (
             <React.Fragment key={tick}>
               <Line x1={leftPad} y1={y} x2={width - 8} y2={y} stroke="#e2e8f0" strokeWidth={1} />
@@ -303,7 +320,7 @@ function GroupedBarChart({ groups, metrics, width }: { groups: GroupedMetricRow[
             <React.Fragment key={group.label}>
               {metrics.map((metric, metricIndex) => {
                 const value = group.values[metric] || 0;
-                const barHeight = (value / 100) * innerHeight;
+                const barHeight = (value / Math.max(yMax, 1)) * innerHeight;
                 const x = groupX + metricIndex * (barWidth + barGap);
                 const y = topPad + innerHeight - barHeight;
                 return <Rect key={metric} x={x} y={y} width={barWidth} height={barHeight} rx={4} fill={CHART_COLORS[metricIndex]} />;
@@ -401,13 +418,13 @@ function buildAnalyticsExportSvg(analysis: AnalysisResult): string {
     const height = analysis.rows.length * rowHeight + 20;
     const rows = analysis.rows.map((row, index) => {
       const y = 10 + index * rowHeight;
-      const barWidth = (row.value / 100) * chartWidth;
+      const barWidth = (row.value / Math.max(analysis.yMax, 1)) * chartWidth;
       return `
         <text x="0" y="${y + 13}" font-size="11" fill="#334155">${escapeHtml(row.label)}</text>
         <text x="0" y="${y + 27}" font-size="10" fill="#64748b">n=${row.count}</text>
         <rect x="${leftPad}" y="${y}" width="${chartWidth}" height="18" rx="9" fill="#e2e8f0" />
         <rect x="${leftPad}" y="${y}" width="${barWidth}" height="18" rx="9" fill="${analysis.color}" />
-        <text x="${leftPad + chartWidth + 8}" y="${y + 13}" font-size="11" fill="#0f172a">${Math.round(row.value)}</text>
+        <text x="${leftPad + chartWidth + 8}" y="${y + 13}" font-size="11" fill="#0f172a">${row.value.toFixed(1)}</text>
       `;
     }).join('');
     return `<div class="svg-wrap"><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${rows}</svg></div>`;
@@ -424,15 +441,16 @@ function buildAnalyticsExportSvg(analysis: AnalysisResult): string {
     const groupWidth = innerWidth / Math.max(analysis.groups.length, 1);
     const barGap = 4;
     const barWidth = Math.max(10, (groupWidth - 18 - barGap * Math.max(0, analysis.metrics.length - 1)) / Math.max(analysis.metrics.length, 1));
-    const grid = [0, 25, 50, 75, 100].map((tick) => {
-      const y = topPad + innerHeight - (tick / 100) * innerHeight;
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => Number((analysis.yMax * ratio).toFixed(analysis.yMax <= 5 ? 1 : 0)));
+    const grid = ticks.map((tick) => {
+      const y = topPad + innerHeight - (tick / Math.max(analysis.yMax, 1)) * innerHeight;
       return `<line x1="${leftPad}" y1="${y}" x2="${width - 8}" y2="${y}" stroke="#e2e8f0" stroke-width="1" /><text x="0" y="${y + 4}" font-size="10" fill="#64748b">${tick}</text>`;
     }).join('');
     const bars = analysis.groups.map((group, groupIndex) => {
       const groupX = leftPad + groupIndex * groupWidth + 8;
       const rects = analysis.metrics.map((metric, metricIndex) => {
         const value = group.values[metric] || 0;
-        const barHeight = (value / 100) * innerHeight;
+        const barHeight = (value / Math.max(analysis.yMax, 1)) * innerHeight;
         const x = groupX + metricIndex * (barWidth + barGap);
         const y = topPad + innerHeight - barHeight;
         return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${CHART_COLORS[metricIndex]}" />`;
@@ -559,7 +577,7 @@ export default function AnalyticsExplorerScreen() {
   const combinationSupported = minimumMet && allDemographicsHaveSubgroups && (
     (selectedDemographics.length === 1 && !includesTierDistribution && selectedClinical.length <= 3) ||
     (selectedDemographics.length === 1 && includesTierDistribution && selectedClinical.length === 1) ||
-    (selectedDemographics.length === 2 && selectedClinical.length === 1 && !includesTierDistribution)
+    (selectedDemographics.length === 2 && selectedClinical.length >= 1 && selectedClinical.length <= 3 && !includesTierDistribution)
   );
 
   const analysis = useMemo<AnalysisResult | null>(() => {
@@ -643,6 +661,44 @@ export default function AnalyticsExplorerScreen() {
       };
     }
 
+    if (demoKeys.length === 2 && clinicalKeys.length > 1) {
+      const [demoA, demoB] = demoKeys;
+      const rowLabels = getSelectedBands(demoA, activeSubgroups);
+      const columnLabels = getSelectedBands(demoB, activeSubgroups);
+      const groups = rowLabels.flatMap((rowLabel) => columnLabels.map((columnLabel) => {
+        const members = filtered.filter((row) => getBandValue(demoA, row) === rowLabel && getBandValue(demoB, row) === columnLabel);
+        if (members.length === 0) return null;
+
+        const values = clinicalKeys.reduce<Record<string, number>>((acc, metric) => {
+          if (metric === 'sensitivity' || metric === 'accuracy') {
+            const stats = computeStats(members.map((row) => row.result).filter(Boolean) as PatientResult[]);
+            acc[metric] = metric === 'sensitivity' ? stats.sens : stats.acc;
+          } else {
+            const metricValues = members.map((row) => getAverageMetricValue(metric, row)).filter((entry): entry is number => entry != null);
+            acc[metric] = metricValues.length ? metricValues.reduce((sum, entry) => sum + entry, 0) / metricValues.length : 0;
+          }
+          return acc;
+        }, {});
+
+        return {
+          label: `${rowLabel} / ${columnLabel}`,
+          count: members.length,
+          values,
+        };
+      })).filter((item): item is GroupedMetricRow => item !== null);
+
+      return {
+        type: 'grouped',
+        title: `${clinicalKeys.map((metric) => getClinicalTitle(metric)).join(' vs ')} by ${getDemographicTitle(demoA)} and ${getDemographicTitle(demoB)}`,
+        excluded: excluded.count,
+        filteredOut: filteredOut.count,
+        groups,
+        metrics: clinicalKeys,
+        chartWidth,
+        yMax: getDisplayAxisMax(clinicalKeys, groups.flatMap((group) => clinicalKeys.map((metric) => group.values[metric] || 0))),
+      };
+    }
+
     const demoKey = demoKeys[0];
   const bandOrder = getSelectedBands(demoKey, activeSubgroups);
     const grouped = bandOrder.map((band) => {
@@ -683,6 +739,7 @@ export default function AnalyticsExplorerScreen() {
         rows: grouped as SingleMetricRow[],
         chartWidth,
         color: CLINICAL_COLORS[clinicalKeys[0]],
+        yMax: getDisplayAxisMax(clinicalKeys, (grouped as SingleMetricRow[]).map((row) => row.value)),
       };
     }
 
@@ -694,6 +751,7 @@ export default function AnalyticsExplorerScreen() {
       groups: grouped as GroupedMetricRow[],
       metrics: clinicalKeys,
       chartWidth,
+      yMax: getDisplayAxisMax(clinicalKeys, (grouped as GroupedMetricRow[]).flatMap((group) => clinicalKeys.map((metric) => group.values[metric] || 0))),
     };
   }, [generatedChart, enrichedPatients, width]);
 
@@ -825,7 +883,7 @@ export default function AnalyticsExplorerScreen() {
             <Text style={styles.selectionWarning}>Choose at least one subgroup for every selected demographic.</Text>
           )}
           {!combinationSupported && minimumMet && (
-            <Text style={styles.selectionWarning}>Supported combinations: 1 demographic + 1-3 clinical metrics, or 2 demographics + 1 clinical metric.</Text>
+            <Text style={styles.selectionWarning}>Supported combinations: 1 demographic + 1-3 clinical metrics, or 2 demographics + 1-3 clinical metrics except tier distribution.</Text>
           )}
         </View>
 
@@ -871,8 +929,8 @@ export default function AnalyticsExplorerScreen() {
               </Text>
               {analysisExplanation && <Text style={styles.chartExplanation}>{analysisExplanation}</Text>}
 
-              {analysis.type === 'horizontal' && <HorizontalBarChart rows={analysis.rows} width={analysis.chartWidth} color={analysis.color} />}
-              {analysis.type === 'grouped' && <GroupedBarChart groups={analysis.groups} metrics={analysis.metrics} width={analysis.chartWidth} />}
+              {analysis.type === 'horizontal' && <HorizontalBarChart rows={analysis.rows} width={analysis.chartWidth} color={analysis.color} yMax={analysis.yMax} />}
+              {analysis.type === 'grouped' && <GroupedBarChart groups={analysis.groups} metrics={analysis.metrics} width={analysis.chartWidth} yMax={analysis.yMax} />}
               {analysis.type === 'stacked' && <StackedTierChart rows={analysis.rows} width={Math.min(analysis.chartWidth, 680)} />}
               {analysis.type === 'heatmap' && <HeatmapChart rows={analysis.rowLabels} columns={analysis.columnLabels} cells={analysis.cells} />}
             </>

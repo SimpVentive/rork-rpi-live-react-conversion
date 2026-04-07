@@ -53,21 +53,38 @@ export function buildExcelHtmlDocument({ title, subtitle, bodyHtml }: Omit<Expor
   `;
 }
 
+async function downloadExcelOnWeb(fileName: string, content: string): Promise<string> {
+  const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Unable to prepare export file.'));
+    };
+    reader.onerror = () => reject(new Error('Unable to prepare export file.'));
+    reader.readAsDataURL(blob);
+  });
+
+  const anchor = window.document.createElement('a');
+  anchor.href = dataUrl;
+  anchor.download = fileName;
+  anchor.rel = 'noopener noreferrer';
+  anchor.style.display = 'none';
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  window.document.body.removeChild(anchor);
+  return fileName;
+}
+
 export async function exportExcelHtmlReport({ fileNameBase, title, subtitle, bodyHtml }: ExportOptions): Promise<string> {
   const fileName = `${fileNameBase.replace(/[^a-z0-9-_]+/gi, '_')}.xls`;
   const content = buildExcelHtmlDocument({ title, subtitle, bodyHtml });
 
   if (Platform.OS === 'web') {
-    const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-    return fileName;
+    return downloadExcelOnWeb(fileName, content);
   }
 
   const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;

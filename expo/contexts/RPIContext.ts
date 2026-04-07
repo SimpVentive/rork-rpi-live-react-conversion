@@ -591,6 +591,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
 
     const scenario = {
       ts,
+      scenario_id: scenarioId,
       weights: W as unknown as Record<string, number>,
       sub_weights: SW as unknown as Record<string, unknown>,
       tga,

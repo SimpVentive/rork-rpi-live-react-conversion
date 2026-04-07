@@ -1,14 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect, Text as SvgText, Line } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+import { Download } from 'lucide-react-native';
 import { useRPI } from '@/contexts/RPIContext';
 import Colors from '@/constants/colors';
 import { fonts } from '@/constants/theme';
 import { DEFAULT_SUB_WEIGHTS, computeStats, sComor, sLife, sPhysio, sROM, sSTarT } from '@/data/scoring';
 import { PatientRaw, PatientResult } from '@/data/types';
+import { escapeHtml, exportExcelHtmlReport } from '@/lib/excelExport';
 
 type DemographicKey = 'gender' | 'age' | 'bmi' | 'waist' | 'height' | 'weight';
 type ClinicalKey = 'rpi' | 'start' | 'romFlexion' | 'romExtension' | 'romLeft' | 'romRight' | 'physio' | 'comor' | 'life' | 'tierDistribution' | 'sensitivity' | 'accuracy';
@@ -380,6 +383,139 @@ function HeatmapChart({ rows, columns, cells }: { rows: string[]; columns: strin
   );
 }
 
+function buildAnalyticsFilterSummary(chartState: ChartState): string {
+  const demographicSummary = chartState.demographics.map((key) => {
+    const subgroups = getSelectedBands(key, chartState.subgroupFilters);
+    return `${getDemographicTitle(key)}: ${subgroups.join(', ')}`;
+  }).join(' | ');
+  const clinicalSummary = chartState.clinical.map((key) => getClinicalTitle(key)).join(', ');
+  return `${demographicSummary} | Clinical: ${clinicalSummary}`;
+}
+
+function buildAnalyticsExportSvg(analysis: AnalysisResult): string {
+  if (analysis.type === 'horizontal') {
+    const width = 820;
+    const leftPad = 170;
+    const chartWidth = width - leftPad - 30;
+    const rowHeight = 38;
+    const height = analysis.rows.length * rowHeight + 20;
+    const rows = analysis.rows.map((row, index) => {
+      const y = 10 + index * rowHeight;
+      const barWidth = (row.value / 100) * chartWidth;
+      return `
+        <text x="0" y="${y + 13}" font-size="11" fill="#334155">${escapeHtml(row.label)}</text>
+        <text x="0" y="${y + 27}" font-size="10" fill="#64748b">n=${row.count}</text>
+        <rect x="${leftPad}" y="${y}" width="${chartWidth}" height="18" rx="9" fill="#e2e8f0" />
+        <rect x="${leftPad}" y="${y}" width="${barWidth}" height="18" rx="9" fill="${analysis.color}" />
+        <text x="${leftPad + chartWidth + 8}" y="${y + 13}" font-size="11" fill="#0f172a">${Math.round(row.value)}</text>
+      `;
+    }).join('');
+    return `<div class="svg-wrap"><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${rows}</svg></div>`;
+  }
+
+  if (analysis.type === 'grouped') {
+    const width = 840;
+    const height = 280;
+    const leftPad = 42;
+    const bottomPad = 58;
+    const topPad = 18;
+    const innerWidth = width - leftPad - 12;
+    const innerHeight = height - topPad - bottomPad;
+    const groupWidth = innerWidth / Math.max(analysis.groups.length, 1);
+    const barGap = 4;
+    const barWidth = Math.max(10, (groupWidth - 18 - barGap * Math.max(0, analysis.metrics.length - 1)) / Math.max(analysis.metrics.length, 1));
+    const grid = [0, 25, 50, 75, 100].map((tick) => {
+      const y = topPad + innerHeight - (tick / 100) * innerHeight;
+      return `<line x1="${leftPad}" y1="${y}" x2="${width - 8}" y2="${y}" stroke="#e2e8f0" stroke-width="1" /><text x="0" y="${y + 4}" font-size="10" fill="#64748b">${tick}</text>`;
+    }).join('');
+    const bars = analysis.groups.map((group, groupIndex) => {
+      const groupX = leftPad + groupIndex * groupWidth + 8;
+      const rects = analysis.metrics.map((metric, metricIndex) => {
+        const value = group.values[metric] || 0;
+        const barHeight = (value / 100) * innerHeight;
+        const x = groupX + metricIndex * (barWidth + barGap);
+        const y = topPad + innerHeight - barHeight;
+        return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${CHART_COLORS[metricIndex]}" />`;
+      }).join('');
+      return `${rects}<text x="${groupX}" y="${height - 24}" font-size="10" fill="#334155">${escapeHtml(group.label)}</text><text x="${groupX}" y="${height - 10}" font-size="9" fill="#64748b">n=${group.count}</text>`;
+    }).join('');
+    return `<div class="svg-wrap"><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${grid}${bars}</svg></div>`;
+  }
+
+  if (analysis.type === 'stacked') {
+    const width = 820;
+    const rowHeight = 52;
+    const leftPad = 0;
+    const trackWidth = 620;
+    const rows = analysis.rows.map((row, index) => {
+      const y = 10 + index * rowHeight;
+      const greenWidth = (row.green / 100) * trackWidth;
+      const amberWidth = (row.amber / 100) * trackWidth;
+      const redWidth = (row.red / 100) * trackWidth;
+      return `
+        <text x="${leftPad}" y="${y + 12}" font-size="12" fill="#334155">${escapeHtml(row.label)} (n=${row.count})</text>
+        <rect x="${leftPad}" y="${y + 18}" width="${trackWidth}" height="18" rx="9" fill="#e5e7eb" />
+        <rect x="${leftPad}" y="${y + 18}" width="${greenWidth}" height="18" rx="9" fill="#059669" />
+        <rect x="${leftPad + greenWidth}" y="${y + 18}" width="${amberWidth}" height="18" fill="#D97706" />
+        <rect x="${leftPad + greenWidth + amberWidth}" y="${y + 18}" width="${redWidth}" height="18" rx="9" fill="#DC2626" />
+        <text x="${trackWidth + 16}" y="${y + 32}" font-size="11" fill="#475569">G ${Math.round(row.green)}% · A ${Math.round(row.amber)}% · R ${Math.round(row.red)}%</text>
+      `;
+    }).join('');
+    return `<div class="svg-wrap"><svg width="${width}" height="${analysis.rows.length * rowHeight + 18}" viewBox="0 0 ${width} ${analysis.rows.length * rowHeight + 18}" xmlns="http://www.w3.org/2000/svg">${rows}</svg></div>`;
+  }
+
+  const cellWidth = 120;
+  const cellHeight = 60;
+  const labelWidth = 120;
+  const headerHeight = 28;
+  const width = labelWidth + analysis.columnLabels.length * cellWidth;
+  const height = headerHeight + analysis.rowLabels.length * cellHeight;
+  const maxValue = Math.max(1, ...analysis.cells.map((cell) => cell.value));
+  const headers = analysis.columnLabels.map((label, index) => `<text x="${labelWidth + index * cellWidth + 16}" y="18" font-size="11" fill="#334155">${escapeHtml(label)}</text>`).join('');
+  const cells = analysis.rowLabels.map((rowLabel, rowIndex) => {
+    const rowHeader = `<text x="0" y="${headerHeight + rowIndex * cellHeight + 28}" font-size="11" fill="#334155">${escapeHtml(rowLabel)}</text>`;
+    const rowCells = analysis.columnLabels.map((columnLabel, columnIndex) => {
+      const cell = analysis.cells.find((entry) => entry.rowLabel === rowLabel && entry.columnLabel === columnLabel);
+      const value = cell?.value || 0;
+      const alpha = 0.12 + (value / maxValue) * 0.78;
+      const x = labelWidth + columnIndex * cellWidth;
+      const y = headerHeight + rowIndex * cellHeight;
+      return `<rect x="${x}" y="${y}" width="${cellWidth - 8}" height="${cellHeight - 8}" rx="8" fill="rgba(30,64,175,${alpha})" /><text x="${x + 12}" y="${y + 24}" font-size="13" fill="#ffffff">${Math.round(value)}</text><text x="${x + 12}" y="${y + 40}" font-size="10" fill="#ffffff">n=${cell?.count || 0}</text>`;
+    }).join('');
+    return rowHeader + rowCells;
+  }).join('');
+  return `<div class="svg-wrap"><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${headers}${cells}</svg></div>`;
+}
+
+function buildAnalyticsDataTable(analysis: AnalysisResult): string {
+  if (analysis.type === 'horizontal') {
+    return `<table><thead><tr><th>Group</th><th>Value</th><th>Count</th></tr></thead><tbody>${analysis.rows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.value.toFixed(1)}</td><td>${row.count}</td></tr>`).join('')}</tbody></table>`;
+  }
+  if (analysis.type === 'grouped') {
+    return `<table><thead><tr><th>Group</th>${analysis.metrics.map((metric) => `<th>${escapeHtml(getClinicalTitle(metric))}</th>`).join('')}<th>Count</th></tr></thead><tbody>${analysis.groups.map((group) => `<tr><td>${escapeHtml(group.label)}</td>${analysis.metrics.map((metric) => `<td>${(group.values[metric] || 0).toFixed(1)}</td>`).join('')}<td>${group.count}</td></tr>`).join('')}</tbody></table>`;
+  }
+  if (analysis.type === 'stacked') {
+    return `<table><thead><tr><th>Group</th><th>Green %</th><th>Amber %</th><th>Red %</th><th>Count</th></tr></thead><tbody>${analysis.rows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.green.toFixed(1)}</td><td>${row.amber.toFixed(1)}</td><td>${row.red.toFixed(1)}</td><td>${row.count}</td></tr>`).join('')}</tbody></table>`;
+  }
+  return `<table><thead><tr><th>Row Group</th><th>Column Group</th><th>Value</th><th>Count</th></tr></thead><tbody>${analysis.cells.map((cell) => `<tr><td>${escapeHtml(cell.rowLabel)}</td><td>${escapeHtml(cell.columnLabel)}</td><td>${cell.value.toFixed(1)}</td><td>${cell.count}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function buildAnalyticsExportHtml(chartState: ChartState, analysis: AnalysisResult, analysisExplanation: string | null): string {
+  return `
+    <h2>${escapeHtml(analysis.title)}</h2>
+    <p>${escapeHtml(buildAnalyticsFilterSummary(chartState))}</p>
+    <div class="metric-grid">
+      <span>Missing data excluded: ${analysis.excluded}</span>
+      <span>Outside selected subgroups: ${analysis.filteredOut}</span>
+      <span>Chart type: ${escapeHtml(analysis.type)}</span>
+    </div>
+    ${analysisExplanation ? `<p>${escapeHtml(analysisExplanation)}</p>` : ''}
+    ${buildAnalyticsExportSvg(analysis)}
+    <h3>Underlying Data</h3>
+    ${buildAnalyticsDataTable(analysis)}
+  `;
+}
+
 export default function AnalyticsExplorerScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -563,6 +699,21 @@ export default function AnalyticsExplorerScreen() {
 
   const analysisExplanation = useMemo(() => getAnalysisExplanation(analysis), [analysis]);
 
+  const handleExport = useCallback(async () => {
+    if (!analysis || !generatedChart) return;
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await exportExcelHtmlReport({
+        fileNameBase: `analytics_export_${new Date().toISOString().slice(0, 10)}`,
+        title: 'Analytics Explorer Export',
+        subtitle: 'Excel-compatible report containing the generated analytics graph and underlying data.',
+        bodyHtml: buildAnalyticsExportHtml(generatedChart, analysis, analysisExplanation),
+      });
+    } catch (error) {
+      Alert.alert('Export Failed', error instanceof Error ? error.message : 'Unable to export analytics report.');
+    }
+  }, [analysis, analysisExplanation, generatedChart]);
+
   function toggleDemographic(key: DemographicKey) {
     setSelectedDemographics((prev) => {
       if (prev.includes(key)) {
@@ -679,21 +830,29 @@ export default function AnalyticsExplorerScreen() {
         </View>
 
         {minimumMet && (
-          <TouchableOpacity
-            style={[styles.generateButton, !combinationSupported && styles.generateButtonDisabled]}
-            onPress={() => setGeneratedChart({
-              demographics: selectedDemographics,
-              clinical: selectedClinical,
-              subgroupFilters: selectedDemographics.reduce<Partial<Record<DemographicKey, string[]>>>((acc, key) => {
-                acc[key] = getSelectedBands(key, subgroupFilters);
-                return acc;
-              }, {}),
-            })}
-            disabled={!combinationSupported}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.generateButtonText}>Generate Chart</Text>
-          </TouchableOpacity>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.generateButton, !combinationSupported && styles.generateButtonDisabled]}
+              onPress={() => setGeneratedChart({
+                demographics: selectedDemographics,
+                clinical: selectedClinical,
+                subgroupFilters: selectedDemographics.reduce<Partial<Record<DemographicKey, string[]>>>((acc, key) => {
+                  acc[key] = getSelectedBands(key, subgroupFilters);
+                  return acc;
+                }, {}),
+              })}
+              disabled={!combinationSupported}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.generateButtonText}>Generate Chart</Text>
+            </TouchableOpacity>
+            {analysis && generatedChart && (
+              <TouchableOpacity style={styles.exportButton} onPress={handleExport} activeOpacity={0.85}>
+                <Download size={14} color="#dbeafe" />
+                <Text style={styles.exportButtonText}>Export XLS</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         <View style={styles.chartCard}>
@@ -859,18 +1018,39 @@ const styles = StyleSheet.create({
     ...fonts.medium,
   },
   generateButton: {
-    marginTop: 14,
-    alignSelf: 'flex-start',
     backgroundColor: '#1E40AF',
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 12,
+  },
+  actionRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    alignItems: 'center',
   },
   generateButtonDisabled: {
     backgroundColor: '#94a3b8',
   },
   generateButtonText: {
     color: Colors.white,
+    fontSize: 13,
+    ...fonts.semibold,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0f3b8f',
+    borderWidth: 1,
+    borderColor: '#1d4ed8',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  exportButtonText: {
+    color: '#dbeafe',
     fontSize: 13,
     ...fonts.semibold,
   },

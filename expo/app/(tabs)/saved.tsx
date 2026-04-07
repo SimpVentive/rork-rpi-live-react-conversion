@@ -3,12 +3,13 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Trash2, Save, Circle, ChevronDown, ChevronUp, Database } from 'lucide-react-native';
+import { Trash2, Save, Circle, ChevronDown, ChevronUp, Database, Download } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useRPI } from '@/contexts/RPIContext';
 import Colors from '@/constants/colors';
 import { SavedScenario, PatientSnapshot } from '@/data/types';
 import { tierColor, riskColor, riskLabel } from '@/data/scoring';
+import { escapeHtml, exportExcelHtmlReport } from '@/lib/excelExport';
 
 type PatientMeta = { age: number; gender: 'M' | 'F' };
 
@@ -315,6 +316,202 @@ const scStyles = StyleSheet.create({
   aiNoteText: { fontSize: 11, color: '#15803d', fontWeight: '600', lineHeight: 16 },
 });
 
+function buildScenarioTrendSvg(scenarios: SavedScenario[]): string {
+  if (scenarios.length === 0) return '<p class="note">No saved scenarios available.</p>';
+
+  const width = 820;
+  const height = 260;
+  const leftPad = 42;
+  const bottomPad = 48;
+  const topPad = 18;
+  const innerWidth = width - leftPad - 12;
+  const innerHeight = height - topPad - bottomPad;
+  const barWidth = Math.max(18, innerWidth / Math.max(scenarios.length, 1) - 18);
+
+  const bars = scenarios.map((scenario, index) => {
+    const x = leftPad + index * (barWidth + 18);
+    const barHeight = (scenario.acc / 100) * innerHeight;
+    const y = topPad + innerHeight - barHeight;
+    return `
+      <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="6" fill="#1d4ed8" />
+      <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#0f172a">${scenario.acc}%</text>
+      <text x="${x + barWidth / 2}" y="${height - 24}" text-anchor="middle" font-size="10" fill="#475569">S${index + 1}</text>
+    `;
+  }).join('');
+
+  const ticks = [0, 25, 50, 75, 100].map((tick) => {
+    const y = topPad + innerHeight - (tick / 100) * innerHeight;
+    return `
+      <line x1="${leftPad}" y1="${y}" x2="${width - 8}" y2="${y}" stroke="#e2e8f0" stroke-width="1" />
+      <text x="4" y="${y + 4}" font-size="10" fill="#64748b">${tick}</text>
+    `;
+  }).join('');
+
+  return `<div class="svg-wrap"><h3>Scenario Accuracy Trend</h3><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${ticks}${bars}</svg></div>`;
+}
+
+function buildGroupWeightSvg(scenario: SavedScenario): string {
+  const groups = [
+    ['STarT', scenario.W.start, '#2563eb'],
+    ['ROM', scenario.W.rom, '#16a34a'],
+    ['Physio', scenario.W.physio, '#7c3aed'],
+    ['Anthropo', scenario.W.anthro, '#d97706'],
+    ['Comorbidity', scenario.W.comor, '#dc2626'],
+    ['Lifestyle', scenario.W.life, '#475569'],
+  ] as const;
+  const width = 720;
+  const rowHeight = 34;
+  const leftPad = 124;
+  const chartWidth = width - leftPad - 24;
+  const total = groups.reduce((sum, [, value]) => sum + value, 0) || 1;
+  const rows = groups.map(([label, value, color], index) => {
+    const y = 12 + index * rowHeight;
+    const barWidth = (value / total) * chartWidth;
+    return `
+      <text x="0" y="${y + 14}" font-size="11" font-weight="700" fill="#334155">${escapeHtml(label)}</text>
+      <rect x="${leftPad}" y="${y}" width="${chartWidth}" height="16" rx="8" fill="#e2e8f0" />
+      <rect x="${leftPad}" y="${y}" width="${barWidth}" height="16" rx="8" fill="${color}" />
+      <text x="${leftPad + chartWidth + 8}" y="${y + 13}" font-size="11" fill="#0f172a">${value}</text>
+    `;
+  }).join('');
+  return `<div class="svg-wrap"><h3>Group Weight Mix</h3><svg width="${width}" height="${groups.length * rowHeight + 14}" viewBox="0 0 ${width} ${groups.length * rowHeight + 14}" xmlns="http://www.w3.org/2000/svg">${rows}</svg></div>`;
+}
+
+function buildTierDistributionSvg(scenario: SavedScenario): string {
+  const total = Math.max(1, scenario.total);
+  const green = (scenario.green / total) * 100;
+  const amber = (scenario.amber / total) * 100;
+  const red = (scenario.red / total) * 100;
+  return `
+    <div class="svg-wrap">
+      <h3>Tier Distribution</h3>
+      <svg width="720" height="80" viewBox="0 0 720 80" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="20" width="720" height="20" rx="10" fill="#e2e8f0" />
+        <rect x="0" y="20" width="${7.2 * green}" height="20" rx="10" fill="#16a34a" />
+        <rect x="${7.2 * green}" y="20" width="${7.2 * amber}" height="20" fill="#d97706" />
+        <rect x="${7.2 * (green + amber)}" y="20" width="${7.2 * red}" height="20" rx="10" fill="#dc2626" />
+        <text x="0" y="62" font-size="11" fill="#166534">Green ${scenario.green}</text>
+        <text x="170" y="62" font-size="11" fill="#b45309">Amber ${scenario.amber}</text>
+        <text x="340" y="62" font-size="11" fill="#b91c1c">Red ${scenario.red}</text>
+      </svg>
+    </div>
+  `;
+}
+
+function buildSavedScenariosExportHtml(
+  scenarios: SavedScenario[],
+  patientMetaByName: Map<string, PatientMeta>,
+  getDisplayName: (name: string) => string,
+): string {
+  const sortedScenarios = [...scenarios].sort((a, b) => (new Date(b.ts).getTime() || 0) - (new Date(a.ts).getTime() || 0));
+
+  const summaryRows = sortedScenarios.map((scenario, index) => {
+    const enrichedPatients = scenario.patients.map((patient) => {
+      const meta = patientMetaByName.get(patient.name);
+      return {
+        ...patient,
+        age: typeof patient.age === 'number' ? patient.age : meta?.age,
+        gender: patient.gender || meta?.gender,
+      };
+    });
+    const femaleCount = enrichedPatients.filter((patient) => patient.gender === 'F').length;
+    const maleCount = enrichedPatients.filter((patient) => patient.gender === 'M').length;
+    const patientsWithAge = enrichedPatients.filter((patient) => typeof patient.age === 'number');
+    const averageAge = patientsWithAge.length > 0
+      ? (patientsWithAge.reduce((sum, patient) => sum + (patient.age || 0), 0) / patientsWithAge.length).toFixed(1)
+      : 'N/A';
+
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(scenario.ts)}</td>
+        <td>${scenario.total}</td>
+        <td>${femaleCount}</td>
+        <td>${maleCount}</td>
+        <td>${averageAge}</td>
+        <td>${scenario.sens}%</td>
+        <td>${scenario.prec}%</td>
+        <td>${scenario.acc}%</td>
+        <td>${scenario.TGA}</td>
+        <td>${scenario.TAR}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const scenarioDetails = sortedScenarios.map((scenario, index) => {
+    const patientRows = scenario.patients.map((patient) => `
+      <tr>
+        <td>${escapeHtml(getDisplayName(patient.name))}</td>
+        <td>${patient.rpi}</td>
+        <td>${escapeHtml(patient.tier)}</td>
+        <td>${escapeHtml(riskLabel(patient.manualRisk))}</td>
+        <td>${patient.domainScores.start}</td>
+        <td>${patient.domainScores.rom}</td>
+        <td>${patient.domainScores.physio}</td>
+        <td>${patient.domainScores.anthro}</td>
+        <td>${patient.domainScores.comor}</td>
+        <td>${patient.domainScores.life}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="card">
+        <h2>Scenario ${index + 1}</h2>
+        <p>Date: ${escapeHtml(scenario.ts)}</p>
+        <div class="metric-grid">
+          <span>Sensitivity ${scenario.sens}%</span>
+          <span>Precision ${scenario.prec}%</span>
+          <span>Accuracy ${scenario.acc}%</span>
+          <span>Thresholds ${scenario.TGA} / ${scenario.TAR}</span>
+        </div>
+        ${buildGroupWeightSvg(scenario)}
+        ${buildTierDistributionSvg(scenario)}
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>RPI</th>
+              <th>Tier</th>
+              <th>Manual</th>
+              <th>STarT</th>
+              <th>ROM</th>
+              <th>Physio</th>
+              <th>Anthropo</th>
+              <th>Comorbidity</th>
+              <th>Lifestyle</th>
+            </tr>
+          </thead>
+          <tbody>${patientRows}</tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <h2>Scenario Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Date</th>
+          <th>Cohort</th>
+          <th>Female</th>
+          <th>Male</th>
+          <th>Avg Age</th>
+          <th>Sensitivity</th>
+          <th>Precision</th>
+          <th>Accuracy</th>
+          <th>TGA</th>
+          <th>TAR</th>
+        </tr>
+      </thead>
+      <tbody>${summaryRows}</tbody>
+    </table>
+    ${buildScenarioTrendSvg(sortedScenarios)}
+    ${scenarioDetails}
+  `;
+}
+
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
   const { patients, savedScenarios, deleteScenario, clearAllScenarios, getDisplayName } = useRPI();
@@ -334,6 +531,21 @@ export default function SavedScreen() {
     ]);
   }, [clearAllScenarios]);
 
+  const handleExport = useCallback(async () => {
+    if (savedScenarios.length === 0) return;
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await exportExcelHtmlReport({
+        fileNameBase: `saved_scenarios_${new Date().toISOString().slice(0, 10)}`,
+        title: 'Saved Scenarios Export',
+        subtitle: 'Excel-compatible report containing saved scenario data and chart snapshots.',
+        bodyHtml: buildSavedScenariosExportHtml(savedScenarios, patientMetaByName, getDisplayName),
+      });
+    } catch (error) {
+      Alert.alert('Export Failed', error instanceof Error ? error.message : 'Unable to export saved scenarios.');
+    }
+  }, [getDisplayName, patientMetaByName, savedScenarios]);
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.topBar}>
@@ -342,9 +554,15 @@ export default function SavedScreen() {
           <Text style={styles.topSub}>Weights + cohort scores for AI training</Text>
         </View>
         {savedScenarios.length > 0 && (
-          <TouchableOpacity style={styles.clearBtn} onPress={handleClearAll} activeOpacity={0.7}>
-            <Text style={styles.clearBtnText}>Clear All</Text>
-          </TouchableOpacity>
+          <View style={styles.topBarActions}>
+            <TouchableOpacity style={styles.exportBtn} onPress={handleExport} activeOpacity={0.7}>
+              <Download size={14} color="#dbeafe" />
+              <Text style={styles.exportBtnText}>Export XLS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.clearBtn} onPress={handleClearAll} activeOpacity={0.7}>
+              <Text style={styles.clearBtnText}>Clear All</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -400,6 +618,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    backgroundColor: '#1d4ed8',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 7,
+  },
+  exportBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#dbeafe',
   },
   clearBtn: {
     borderWidth: 1,

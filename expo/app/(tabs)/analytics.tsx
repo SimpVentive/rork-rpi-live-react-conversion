@@ -11,7 +11,7 @@ import { DEFAULT_SUB_WEIGHTS, computeStats, sComor, sLife, sPhysio, sROM, sSTarT
 import { PatientRaw, PatientResult } from '@/data/types';
 
 type DemographicKey = 'gender' | 'age' | 'bmi' | 'waist' | 'height' | 'weight';
-type ClinicalKey = 'rpi' | 'start' | 'rom' | 'physio' | 'comor' | 'life' | 'tierDistribution' | 'sensitivity' | 'accuracy';
+type ClinicalKey = 'rpi' | 'start' | 'romFlexion' | 'romExtension' | 'romLeft' | 'romRight' | 'physio' | 'comor' | 'life' | 'tierDistribution' | 'sensitivity' | 'accuracy';
 
 type EnrichedPatient = {
   patient: PatientRaw;
@@ -72,7 +72,10 @@ const CHART_COLORS = ['#1E40AF', '#7C3AED', '#0891B2'];
 const CLINICAL_COLORS: Record<ClinicalKey, string> = {
   rpi: '#1E40AF',
   start: '#7C3AED',
-  rom: '#0891B2',
+  romFlexion: '#0891B2',
+  romExtension: '#0F766E',
+  romLeft: '#D97706',
+  romRight: '#9333EA',
   physio: '#D97706',
   comor: '#DC2626',
   life: '#059669',
@@ -93,7 +96,10 @@ const DEMOGRAPHIC_OPTIONS: Array<{ key: DemographicKey; label: string; title: st
 const CLINICAL_OPTIONS: Array<{ key: ClinicalKey; label: string; title: string }> = [
   { key: 'rpi', label: 'RPI Score (average)', title: 'Average RPI' },
   { key: 'start', label: 'STarT Score (average)', title: 'Average STarT Score' },
-  { key: 'rom', label: 'ROM Score (average)', title: 'Average ROM Score' },
+  { key: 'romFlexion', label: 'ROM Flexion', title: 'Average Flexion Angle' },
+  { key: 'romExtension', label: 'ROM Extension', title: 'Average Extension Angle' },
+  { key: 'romLeft', label: 'ROM Left Rotation', title: 'Average Left Rotation Angle' },
+  { key: 'romRight', label: 'ROM Right Rotation', title: 'Average Right Rotation Angle' },
   { key: 'physio', label: 'Physio Score (average)', title: 'Average Physio Score' },
   { key: 'comor', label: 'Comorbidity Score (average)', title: 'Average Comorbidity Score' },
   { key: 'life', label: 'Lifestyle Score (average)', title: 'Average Lifestyle Score' },
@@ -161,7 +167,10 @@ function getDemographicOrder(key: DemographicKey): string[] {
 function getAverageMetricValue(key: ClinicalKey, row: EnrichedPatient): number | null {
   if (key === 'rpi') return row.rpi;
   if (key === 'start') return row.start;
-  if (key === 'rom') return row.rom;
+  if (key === 'romFlexion') return row.patient.flex;
+  if (key === 'romExtension') return row.patient.ext;
+  if (key === 'romLeft') return row.patient.lrot;
+  if (key === 'romRight') return row.patient.rrot;
   if (key === 'physio') return row.physio;
   if (key === 'comor') return row.comor;
   if (key === 'life') return row.life;

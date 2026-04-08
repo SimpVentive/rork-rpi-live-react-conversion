@@ -53,60 +53,74 @@ export const patientsRouter = createTRPCRouter({
     }),
 
   seed: publicProcedure
-    .input(z.object({ patients: z.array(patientSchema) }))
-    .mutation(async ({ input }) => {
-      await ensureDB();
-      console.log("[patients.seed] Seeding", input.patients.length, "patients");
+  .input(z.object({ patients: z.array(patientSchema) }))
+  .mutation(async ({ input }) => {
+    await ensureDB();
 
-      const existing = await dbQuery<{ COUNT: number }>("SELECT COUNT(*) as COUNT FROM patient");
-      const count = existing.length > 0 ? existing[0].COUNT : 0;
+    console.log("[patients.seed] Seeding", input.patients.length, "patients");
 
-      if (count > 0) {
-        console.log("[patients.seed] DB already has", count, "patients, skipping seed");
-        return { seeded: false, existing: count };
-      }
+    const existing = await dbQuery<{ count: number }>(
+      "SELECT COUNT(*) as count FROM patient"
+    );
 
-      for (const p of input.patients) {
-        await dbQuery(
-          `INSERT INTO patient (name, age, g, sr, ar, gr, htn, dm, oa, osteo, injury, surgical, thyroid, flex, ext, lrot, rrot, start, fab_l, fair_l, slr_l, fab_r, fair_r, slr_r, hyp, tend, tight, knots, site)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            p.name,
-            p.age,
-            p.g,
-            p.sr,
-            p.ar,
-            p.gr,
-            p.htn,
-            p.dm,
-            p.oa,
-            p.osteo,
-            p.injury,
-            p.surgical,
-            p.thyroid,
-            p.flex,
-            p.ext,
-            p.lrot,
-            p.rrot,
-            p.start,
-            p.fab_l,
-            p.fair_l,
-            p.slr_l,
-            p.fab_r,
-            p.fair_r,
-            p.slr_r,
-            p.hyp,
-            p.tend,
-            p.tight,
-            p.knots,
-            p.site,
-          ],
-        );
-      }
+    const count = existing[0]?.count ?? 0;
 
-      console.log("[patients.seed] Seeded", input.patients.length, "patients successfully");
-      return { seeded: true, count: input.patients.length };
-    }),
+    if (count > 0) {
+      console.log("[patients.seed] DB already has", count, "patients");
+      return { seeded: false, existing: count };
+    }
+
+    // ✅ BULK INSERT
+    const values = input.patients.map((p) => [
+      p.name,
+      p.age,
+      p.g,
+      p.sr,
+      p.ar,
+      p.gr,
+      p.htn,
+      p.dm,
+      p.oa,
+      p.osteo,
+      p.injury,
+      p.surgical,
+      p.thyroid,
+      p.flex,
+      p.ext,
+      p.lrot,
+      p.rrot,
+      p.start,
+      p.fab_l,
+      p.fair_l,
+      p.slr_l,
+      p.fab_r,
+      p.fair_r,
+      p.slr_r,
+      p.hyp,
+      p.tend,
+      p.tight,
+      p.knots,
+      p.site,
+    ]);
+
+    const placeholders = values.map(() => "(?)").join(",");
+
+    await dbQuery(
+      `
+      INSERT INTO patient (
+        name, age, g, sr, ar, gr, htn, dm, oa, osteo, injury, surgical, thyroid,
+        flex, ext, lrot, rrot, start,
+        fab_l, fair_l, slr_l, fab_r, fair_r, slr_r,
+        hyp, tend, tight, knots, site
+      ) VALUES ${values.map(() => "(" + new Array(29).fill("?").join(",") + ")").join(",")}
+      `,
+      values.flat()
+    );
+
+    console.log("[patients.seed] Bulk insert complete");
+
+    return { seeded: true, count: input.patients.length };
+  }),
 
   update: publicProcedure
     .input(z.object({

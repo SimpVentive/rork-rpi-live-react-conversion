@@ -17,6 +17,7 @@ const SITE_CREDENTIALS: SiteCredential[] = [
   { site: 'Abhis', label: 'Abhis Clinic', email: 'abhis@rpi.demo', password: 'abhis2024' },
   { site: 'Kues', label: 'Kues Center', email: 'kues@rpi.demo', password: 'kues2024' },
   { site: 'SDD', label: 'SDD Research', email: 'sdd@rpi.demo', password: 'sdd2024' },
+  { site: 'AIG', label: 'AIG Hospital', email: 'aig@rpi.demo', password: 'aig2024' },
   { site: 'ALL', label: 'Admin (All Sites)', email: 'admin@rpi.demo', password: 'admin2024' },
 ];
 

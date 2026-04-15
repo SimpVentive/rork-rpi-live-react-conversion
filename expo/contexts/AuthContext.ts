@@ -5,6 +5,14 @@ import createContextHook from '@nkzw/create-context-hook';
 const AUTH_KEY = 'rpi_auth_site';
 const ANON_KEY = 'rpi_anonymize';
 
+const SITE_ANON_MAP: Record<string, string> = {
+  SDD: 'Site 1',
+  Abhis: 'Site 2',
+  KIMS: 'Site 3',
+  Kues: 'Site 4',
+  AIG: 'Site 5',
+};
+
 export interface SiteCredential {
   site: string;
   label: string;
@@ -19,6 +27,7 @@ const SITE_CREDENTIALS: SiteCredential[] = [
   { site: 'SDD', label: 'SDD Research', email: 'sdd@rpi.demo', password: 'sdd2024' },
   { site: 'AIG', label: 'AIG Hospital', email: 'aig@rpi.demo', password: 'aig2024' },
   { site: 'ALL', label: 'Admin (All Sites)', email: 'admin@rpi.demo', password: 'admin2024' },
+  { site: 'RESEARCH', label: 'Research (All Sites)', email: 'research@rpi.demo', password: 'Research$123$' },
 ];
 
 export const [AuthProvider, useAuth] = createContextHook(() => {
@@ -63,6 +72,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setCurrentSite(cred.site);
       setSiteLabel(cred.label);
       void AsyncStorage.setItem(AUTH_KEY, cred.site);
+      if (cred.site === 'RESEARCH') {
+        setAnonymize(true);
+        void AsyncStorage.setItem(ANON_KEY, 'true');
+        console.log('Research user: forced anonymize ON on login');
+      }
       console.log(`Logged in as ${cred.label} (${cred.site})`);
       return true;
     }
@@ -78,17 +92,35 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('Logged out');
   }, []);
 
+  const isAdmin = currentSite === 'ALL' || currentSite === 'RESEARCH';
+  const isResearchUser = currentSite === 'RESEARCH';
+  const isLoggedIn = currentSite !== null;
+
+  useEffect(() => {
+    if (isResearchUser && !anonymize) {
+      setAnonymize(true);
+      void AsyncStorage.setItem(ANON_KEY, 'true');
+      console.log('Research user: forced anonymize ON');
+    }
+  }, [isResearchUser, anonymize]);
+
   const toggleAnonymize = useCallback(() => {
+    if (isResearchUser) {
+      console.log('Research user: anonymize toggle blocked');
+      return;
+    }
     setAnonymize((prev) => {
       const next = !prev;
       void AsyncStorage.setItem(ANON_KEY, next ? 'true' : 'false');
       console.log('Anonymize toggled:', next);
       return next;
     });
-  }, []);
+  }, [isResearchUser]);
 
-  const isAdmin = currentSite === 'ALL';
-  const isLoggedIn = currentSite !== null;
+  const getDisplaySiteName = useCallback((realSite: string): string => {
+    if (!isResearchUser) return realSite;
+    return SITE_ANON_MAP[realSite] || realSite;
+  }, [isResearchUser]);
 
   return useMemo(() => ({
     currentSite,
@@ -96,11 +128,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isLoading,
     isLoggedIn,
     isAdmin,
+    isResearchUser,
     anonymize,
     loginError,
     login,
     logout,
     toggleAnonymize,
+    getDisplaySiteName,
     credentials: SITE_CREDENTIALS,
-  }), [currentSite, siteLabel, isLoading, isLoggedIn, isAdmin, anonymize, loginError, login, logout, toggleAnonymize]);
+  }), [currentSite, siteLabel, isLoading, isLoggedIn, isAdmin, isResearchUser, anonymize, loginError, login, logout, toggleAnonymize, getDisplaySiteName]);
 });

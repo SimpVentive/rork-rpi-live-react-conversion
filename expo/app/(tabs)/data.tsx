@@ -15,7 +15,7 @@ function MetricCard({ label, value, color }: { label: string; value: string | nu
 
 export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
-  const { stats, results, savedScenarios } = useRPI();
+  const { stats, results, savedScenarios, getDisplaySiteName } = useRPI();
 
   const sortedScenarios = useMemo(() => {
     return [...savedScenarios].sort((a, b) => {
@@ -74,7 +74,7 @@ export default function AnalyticsScreen() {
         <View style={styles.siteGrid}>
           {statusBreakdown.map((site) => (
             <View key={site.site} style={styles.siteTile}>
-              <Text style={styles.siteName}>{site.site}</Text>
+              <Text style={styles.siteName}>{getDisplaySiteName(site.site)}</Text>
               <Text style={styles.siteValue}>{site.total} patients</Text>
               <View style={styles.badgeRow}>
                 <Text style={[styles.siteBadge, { backgroundColor: Colors.greenBg, color: Colors.greenDark }]}>G {site.green}</Text>

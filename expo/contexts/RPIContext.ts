@@ -39,10 +39,11 @@ type OptimizationResult = {
 };
 
 export const [RPIProvider, useRPI] = createContextHook(() => {
-  const { currentSite, isAdmin, anonymize } = useAuth();
+  const { currentSite, isAdmin, isResearchUser, anonymize, getDisplaySiteName } = useAuth();
   const queryClient = useQueryClient();
 
   const siteParam = isAdmin ? 'ALL' : (currentSite || 'ALL');
+  const effectiveSiteParam = currentSite === 'RESEARCH' ? 'ALL' : siteParam;
   const scenariosStorageKey = `LOCAL_SCENARIOS:${siteParam}`;
 
   const loadLocalScenarios = useCallback(async (): Promise<SavedScenario[]> => {
@@ -88,12 +89,12 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   const patientsQuery = useQuery({
-    queryKey: ['patients', siteParam],
+    queryKey: ['patients', effectiveSiteParam],
     queryFn: async () => {
       try {
         setIsOfflineMode(false);
-        console.log('[RPIContext] Fetching patients from DB, site:', siteParam);
-        const dbPatients = await api.patients.list.query({ site: siteParam });
+        console.log('[RPIContext] Fetching patients from DB, site:', effectiveSiteParam);
+        const dbPatients = await api.patients.list.query({ site: effectiveSiteParam });
         console.log('[RPIContext] Got', dbPatients.length, 'patients from DB');
 
         if (dbPatients.length > 0) {
@@ -135,7 +136,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
         await api.patients.seed.mutate({ patients: staticPatients });
         console.log('[RPIContext] Seed complete, re-fetching...');
 
-        const freshPatients = await api.patients.list.query({ site: siteParam });
+        const freshPatients = await api.patients.list.query({ site: effectiveSiteParam });
         return freshPatients.map((p: Record<string, unknown>) => ({
           name: p.name as string,
           age: p.age as number,
@@ -181,11 +182,11 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   });
 
   const manualOverridesQuery = useQuery({
-    queryKey: ['manualOverrides', siteParam],
+    queryKey: ['manualOverrides', effectiveSiteParam],
     queryFn: async () => {
       try {
         console.log('[RPIContext] Fetching manual overrides from DB');
-        const overrides = await api.overrides.listManual.query({ site: siteParam });
+        const overrides = await api.overrides.listManual.query({ site: effectiveSiteParam });
         console.log('[RPIContext] Got manual overrides:', Object.keys(overrides).length);
         return overrides as Record<string, 'H' | 'M' | 'L' | 'U'>;
       } catch (err) {
@@ -197,11 +198,11 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   });
 
   const lifeOverridesQuery = useQuery({
-    queryKey: ['lifeOverrides', siteParam],
+    queryKey: ['lifeOverrides', effectiveSiteParam],
     queryFn: async () => {
       try {
         console.log('[RPIContext] Fetching life overrides from DB');
-        const overrides = await api.overrides.listLife.query({ site: siteParam });
+        const overrides = await api.overrides.listLife.query({ site: effectiveSiteParam });
         console.log('[RPIContext] Got life overrides:', Object.keys(overrides).length);
         const typed: Record<string, LifeOverride> = {};
         for (const [name, rawData] of Object.entries(overrides)) {
@@ -225,11 +226,11 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
   });
 
   const scenariosQuery = useQuery({
-    queryKey: ['scenarios', siteParam],
+    queryKey: ['scenarios', effectiveSiteParam],
     queryFn: async () => {
       try {
         console.log('[RPIContext] Fetching scenarios from DB');
-        const results = await api.scenarios.list.query({ site: siteParam });
+        const results = await api.scenarios.list.query({ site: effectiveSiteParam });
         console.log('[RPIContext] Got', results.length, 'scenarios');
         const remote = results.map((s: Record<string, unknown>) => ({
           id: (s.id as string) || String(Date.now()),
@@ -907,7 +908,9 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
     filterSite, setFilterSite,
     filterGender, setFilterGender,
     getDisplayName,
+    getDisplaySiteName,
     anonymize,
+    isResearchUser,
     isDataLoading,
     isDbConnected,
     optimizing,
@@ -929,7 +932,7 @@ export const [RPIProvider, useRPI] = createContextHook(() => {
     savedScenarios, saveScenario, deleteScenario, clearAllScenarios,
     selectedPatient, sortCol, sortDir, toggleSort,
     searchQuery, filterRisk, filterTier, filterSite, filterGender,
-    getDisplayName, anonymize, isDataLoading, isDbConnected,
+    getDisplayName, getDisplaySiteName, anonymize, isResearchUser, isDataLoading, isDbConnected,
     optimizing, optProgress, optResults, showOptModal, setShowOptModal, runOptimization, minDomainWeight, setMinDomainWeight, setPhysioNotPerformed, isPhysioNotPerformed, applyOptimalWeights,
   ]);
 });

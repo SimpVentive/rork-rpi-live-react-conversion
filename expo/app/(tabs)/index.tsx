@@ -45,7 +45,7 @@ function FilterChip({ label, active, onPress }: { label: string; active: boolean
   );
 }
 
-const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wide }: { p: PatientResult; onPress: () => void; displayName: string; wide: boolean }) {
+const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, displaySite, wide }: { p: PatientResult; onPress: () => void; displayName: string; displaySite: string; wide: boolean }) {
   const tc = tierColor(p.tier);
   const rc = riskColor(p.sr);
   const match = getMatchType(p.sr, p.tier);
@@ -58,7 +58,7 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wid
         <View style={[styles.patientInfo, styles.nameCell]}>
           <Text style={styles.patientName} numberOfLines={1}>{displayName}</Text>
           <View style={styles.patientMetaRow}>
-            <Text style={styles.patientMetaText}>{p.age}{p.g} · {p.site}</Text>
+            <Text style={styles.patientMetaText}>{p.age}{p.g} · {displaySite}</Text>
             {noPhysio && (
               <View style={styles.noPhysioBadge}>
                 <Text style={styles.noPhysioBadgeText}>No Physio</Text>
@@ -87,7 +87,7 @@ const PatientRow = React.memo(function PatientRow({ p, onPress, displayName, wid
         <View style={styles.patientMeta}>
           <Text style={styles.patientAge}>{p.age}{p.g}</Text>
           <View style={styles.siteBadge}>
-            <Text style={styles.siteBadgeText}>{p.site}</Text>
+            <Text style={styles.siteBadgeText}>{displaySite}</Text>
           </View>
           {noPhysio && (
             <View style={styles.noPhysioBadgeCompact}>
@@ -126,13 +126,13 @@ export default function DashboardScreen() {
     filterSite, setFilterSite,
     filterGender, setFilterGender,
     toggleSort, sortCol, sortDir,
-    getDisplayName,
+    getDisplayName, getDisplaySiteName,
     runOptimization, optimizing, optProgress, optResults, showOptModal, setShowOptModal, applyOptimalWeights,
     minDomainWeight, setMinDomainWeight,
     W, tga, tar,
     isDataLoading, isDbConnected,
   } = useRPI();
-  const { siteLabel, anonymize, toggleAnonymize, logout } = useAuth();
+  const { siteLabel, anonymize, isResearchUser, toggleAnonymize, logout } = useAuth();
 
   const handlePatientPress = useCallback((name: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -156,6 +156,8 @@ export default function DashboardScreen() {
     const idx = vals.indexOf(filterSite);
     setFilterSite(vals[(idx + 1) % vals.length]);
   }, [filterSite, setFilterSite]);
+
+  const displayFilterSite = filterSite ? getDisplaySiteName(filterSite) : '';
 
   const cycleGender = useCallback(() => {
     const vals = ['', 'M', 'F'];
@@ -204,9 +206,10 @@ export default function DashboardScreen() {
               <Switch
                 value={anonymize}
                 onValueChange={toggleAnonymize}
+                disabled={isResearchUser}
                 trackColor={{ false: Colors.border, true: Colors.bluePale }}
                 thumbColor={anonymize ? Colors.blue : Colors.textMuted}
-                style={styles.anonSwitch}
+                style={[styles.anonSwitch, isResearchUser && { opacity: 0.5 }]}
               />
             </View>
             <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.7}>
@@ -283,7 +286,7 @@ export default function DashboardScreen() {
           <View style={styles.filterRow}>
             <FilterChip label={filterRisk ? riskLabel(filterRisk) : 'Risk'} active={!!filterRisk} onPress={cycleRisk} />
             <FilterChip label={filterTier || 'Tier'} active={!!filterTier} onPress={cycleTier} />
-            <FilterChip label={filterSite || 'Site'} active={!!filterSite} onPress={cycleSite} />
+            <FilterChip label={displayFilterSite || 'Site'} active={!!filterSite} onPress={cycleSite} />
             <FilterChip label={filterGender || 'Gender'} active={!!filterGender} onPress={cycleGender} />
           </View>
 
@@ -311,7 +314,7 @@ export default function DashboardScreen() {
           )}
 
           {filteredResults.map((p) => (
-            <PatientRow key={p.name} p={p} displayName={getDisplayName(p.name)} onPress={() => handlePatientPress(p.name)} wide={isWide} />
+            <PatientRow key={p.name} p={p} displayName={getDisplayName(p.name)} displaySite={getDisplaySiteName(p.site)} onPress={() => handlePatientPress(p.name)} wide={isWide} />
           ))}
         </View>
       </ScrollView>

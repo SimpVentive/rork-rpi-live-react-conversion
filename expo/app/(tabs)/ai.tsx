@@ -22,6 +22,7 @@ interface AIPatientRow {
   age: number;
   gender: string;
   site: string;
+  displaySite: string;
   manualRisk: string;
   ar: number;
   gr: number;
@@ -101,7 +102,7 @@ const COLUMNS: ColDef[] = [
   { key: 'name', label: 'Patient', width: 130, section: 'demographics', getValue: (r) => r.displayName, align: 'left' },
   { key: 'age', label: 'Age', width: 44, section: 'demographics', getValue: (r) => r.age },
   { key: 'gender', label: 'G', width: 34, section: 'demographics', getValue: (r) => r.gender },
-  { key: 'site', label: 'Site', width: 52, section: 'demographics', getValue: (r) => r.site },
+  { key: 'site', label: 'Site', width: 52, section: 'demographics', getValue: (r) => r.displaySite },
   { key: 'manual', label: 'Risk', width: 44, section: 'demographics', getValue: (r) => r.manualRisk },
   { key: 'ar', label: 'AR', width: 34, section: 'demographics', getValue: (r) => r.ar },
   { key: 'gr', label: 'GR', width: 34, section: 'demographics', getValue: (r) => r.gr },
@@ -160,7 +161,7 @@ type ActiveTab = 'table' | 'sensitivity';
 
 export default function AIScreen() {
   const insets = useSafeAreaInsets();
-  const { results, patients, SW, W, tga, tar, getLifeOverride, getDisplayName, lifeOverrides, weightTotal } = useRPI();
+  const { results, patients, SW, W, tga, tar, getLifeOverride, getDisplayName, getDisplaySiteName, lifeOverrides, weightTotal } = useRPI();
   const [sortKey, setSortKey] = useState<SortKey>('ratio');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [filterSite, setFilterSite] = useState<string>('');
@@ -286,6 +287,7 @@ export default function AIScreen() {
         age: p.age,
         gender: p.g,
         site: p.site,
+        displaySite: getDisplaySiteName(p.site),
         manualRisk: p.sr,
         ar: p.ar,
         gr: p.gr,
@@ -579,7 +581,7 @@ export default function AIScreen() {
           <View style={styles.filterBar}>
             <TouchableOpacity style={[styles.filterChip, filterSite ? styles.filterChipActive : undefined]} onPress={cycleSite}>
               <Text style={[styles.filterChipText, filterSite ? styles.filterChipTextActive : undefined]}>
-                {filterSite || 'All Sites'}
+                {filterSite ? getDisplaySiteName(filterSite) : 'All Sites'}
               </Text>
               <ChevronDown size={12} color={filterSite ? '#0d9488' : '#64748b'} />
             </TouchableOpacity>

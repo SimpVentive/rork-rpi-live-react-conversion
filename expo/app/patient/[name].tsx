@@ -77,7 +77,7 @@ export default function PatientDetailScreen() {
   const router = useRouter();
   const { name: encodedName } = useLocalSearchParams<{ name: string }>();
   const patientName = decodeURIComponent(encodedName || '');
-  const { results, SW, W, getLifeOverride, tga, tar, getDisplayName, setManualClassification, manualOverrides, isPhysioNotPerformed, setPhysioNotPerformed } = useRPI();
+  const { results, SW, W, getLifeOverride, tga, tar, getDisplayName, getDisplaySiteName, setManualClassification, manualOverrides, isPhysioNotPerformed, setPhysioNotPerformed } = useRPI();
 
   const patient = useMemo(
     () => results.find((r) => r.name === patientName) ?? null,
@@ -165,7 +165,7 @@ export default function PatientDetailScreen() {
             <Text style={styles.rpiLabel}>RPI</Text>
           </View>
           <View style={styles.heroInfo}>
-            <Text style={styles.heroMeta}>{patient.age}yr · {patient.g === 'F' ? 'Female' : 'Male'} · {patient.site}</Text>
+            <Text style={styles.heroMeta}>{patient.age}yr · {patient.g === 'F' ? 'Female' : 'Male'} · {getDisplaySiteName(patient.site)}</Text>
             <View style={styles.heroTags}>
               <View style={[styles.tierTag, { backgroundColor: tc + '18', borderColor: tc }]}>
                 <Text style={[styles.tierTagText, { color: tc }]}>{patient.tier}</Text>

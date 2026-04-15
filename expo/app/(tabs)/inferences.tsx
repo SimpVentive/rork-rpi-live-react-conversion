@@ -95,7 +95,7 @@ const daStyles = StyleSheet.create({
 
 export default function InferencesScreen() {
   const insets = useSafeAreaInsets();
-  const { results, SW, W, getLifeOverride, stats } = useRPI();
+  const { results, SW, W, getLifeOverride, stats, getDisplaySiteName } = useRPI();
 
   const cohortAnalysis = useMemo(() => {
     const groups: Record<string, typeof results> = { H: [], M: [], L: [], U: [] };
@@ -250,7 +250,7 @@ export default function InferencesScreen() {
           {siteBreakdown.map((s) => (
             <View key={s.site} style={styles.siteRow}>
               <View style={styles.siteHeader}>
-                <Text style={styles.siteName}>{s.site}</Text>
+                <Text style={styles.siteName}>{getDisplaySiteName(s.site)}</Text>
                 <Text style={styles.siteCount}>n={s.total}</Text>
               </View>
               <View style={styles.siteTiers}>
